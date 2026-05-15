@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#094d47">
+  <title>Inwentaryzacja, RM Nieruchomości</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <link rel="stylesheet" href="style.css?v=25">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/signature_pad@5/dist/signature_pad.umd.min.js"></script>
+  <script src="roboto-fonts.js?v=25"></script>
+</head>
+<body>
+
+<div class="app">
+
+  <header>
+    <div class="header-left">
+      <img src="logo.png" alt="RM Biuro Nieruchomości" class="header-logo">
+      <div class="subtitle" id="header-subtitle">Inwentaryzacja najmu</div>
+    </div>
+    <button class="back" id="back-btn" style="display:none">← Wstecz</button>
+  </header>
+
+  <!-- ============ EKRAN START ============ -->
+  <section class="screen active" id="screen-home">
+
+    <div class="title-banner">
+      <div class="title-banner-sub">Załącznik nr 5</div>
+      <div class="title-banner-main">Protokół zdawczo-odbiorczy</div>
+      <div class="title-banner-extra">Inwentaryzacja</div>
+      <div class="title-banner-extra">Stan techniczny lokalu</div>
+    </div>
+
+    <div class="card">
+      <h2>🏠 Nowa, przekazanie</h2>
+      <button class="btn btn-primary btn-full" id="btn-new-wpis" style="margin-bottom:8px">
+        ✅ WPIS, przekazanie najemcy
+      </button>
+      <button class="btn btn-secondary btn-full" id="btn-new-wypis">
+        🔄 WYPIS, odbiór od najemcy
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>📂 Zapisane inwentaryzacje <span class="count" id="count-archive">0</span></h2>
+      <div id="archive-list"></div>
+    </div>
+
+    <div class="card" style="background: #fef3c7; border-color: #fbbf24;">
+      <h2 style="color: #92400e;">💡 Wskazówki</h2>
+      <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #92400e;">
+        <li>Dane zapisują się automatycznie w telefonie</li>
+        <li>Wszystko działa offline, bez internetu</li>
+        <li>Kliknij ikonę 🎤 obok pola, żeby dyktować głosem</li>
+        <li>Aparat 📷 otwiera kamerę telefonu i dodaje zdjęcie do pozycji</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ EKRAN WYBORU POMIESZCZEŃ ============ -->
+  <section class="screen" id="screen-rooms-select"></section>
+
+  <!-- ============ EKRAN FORMULARZA ============ -->
+  <section class="screen" id="screen-form">
+
+    <div class="card">
+      <h2>📋 Dane podstawowe</h2>
+
+      <div class="type-selector">
+        <button class="type-btn" data-typ="WPIS" id="type-wpis">
+          WPIS
+          <span class="desc">przekazanie najemcy</span>
+        </button>
+        <button class="type-btn" data-typ="WYPIS" id="type-wypis">
+          WYPIS
+          <span class="desc">odbiór od najemcy</span>
+        </button>
+      </div>
+
+      <div class="field">
+        <label>Adres lokalu *</label>
+        <div class="input-with-mic">
+          <input type="text" id="f-adres" placeholder="np. Browarna 10/8, Elbląg">
+          <button class="mic-btn" type="button" data-mic="#f-adres" title="Dyktuj">🎤</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Data przekazania *</label>
+        <input type="date" id="f-data">
+      </div>
+    </div>
+
+    <!-- Dane przekazującego (wynajmującego) -->
+    <div class="card" id="przekazujacy-card">
+      <h2>
+        👤 Dane przekazującego (wynajmującego)
+        <button class="card-toggle" id="prz-toggle" type="button" aria-label="Zwiń/rozwiń">▾</button>
+      </h2>
+      <div class="card-body" id="prz-body">
+        <p style="font-size: 13px; color: var(--muted); margin: 0 0 12px;">
+          Te dane pojawią się na stronie tytułowej każdego protokołu PDF. Zapisują się automatycznie.
+        </p>
+        <div class="field">
+          <label>Imię i nazwisko</label>
+          <div class="input-with-mic">
+            <input type="text" id="prz-imie">
+            <button class="mic-btn" type="button" data-mic="#prz-imie" title="Dyktuj">🎤</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Stanowisko / funkcja</label>
+          <div class="input-with-mic">
+            <input type="text" id="prz-stanowisko" placeholder="np. pośrednik w obrocie nieruchomościami">
+            <button class="mic-btn" type="button" data-mic="#prz-stanowisko" title="Dyktuj">🎤</button>
+          </div>
+        </div>
+        <div class="field-row">
+          <div>
+            <label>Nr dowodu osobistego</label>
+            <div class="input-with-mic">
+              <input type="text" id="prz-dowod">
+              <button class="mic-btn" type="button" data-mic="#prz-dowod" title="Dyktuj">🎤</button>
+            </div>
+          </div>
+          <div>
+            <label>Ważny do</label>
+            <div class="input-with-mic">
+              <input type="text" id="prz-dataWaznosci" placeholder="np. 04.07.2034">
+              <button class="mic-btn" type="button" data-mic="#prz-dataWaznosci" title="Dyktuj">🎤</button>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Adres zamieszkania</label>
+          <div class="input-with-mic">
+            <input type="text" id="prz-adres">
+            <button class="mic-btn" type="button" data-mic="#prz-adres" title="Dyktuj">🎤</button>
+          </div>
+        </div>
+        <div class="field-row">
+          <div>
+            <label>Telefon</label>
+            <div class="input-with-mic">
+              <input type="tel" id="prz-telefon">
+              <button class="mic-btn" type="button" data-mic="#prz-telefon" title="Dyktuj">🎤</button>
+            </div>
+          </div>
+          <div>
+            <label>Email</label>
+            <div class="input-with-mic">
+              <input type="email" id="prz-email">
+              <button class="mic-btn" type="button" data-mic="#prz-email" title="Dyktuj">🎤</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Najemcy (do 3) -->
+    <div class="card">
+      <h2>👤 Najemcy <span class="count" id="najemcy-count"></span></h2>
+      <div id="najemcy-list"></div>
+    </div>
+
+    <div class="section-divider master">📄 Protokół zdawczo-odbiorczy</div>
+
+    <!-- Liczniki -->
+    <div class="card">
+      <h2>⚡ Liczniki</h2>
+      <div id="liczniki-list"></div>
+    </div>
+
+    <!-- Klucze i akcesoria -->
+    <div class="card">
+      <h2>🔑 Klucze i akcesoria</h2>
+      <div id="akcesoria-list"></div>
+      <div class="field" style="margin-top: 12px;">
+        <label>Inne akcesoria (opisz)</label>
+        <div class="input-with-mic">
+          <textarea id="f-akcesoria-inne" placeholder="np. drabinka do antresoli, podest w sypialni..."></textarea>
+          <button class="mic-btn" type="button" data-mic="#f-akcesoria-inne" title="Dyktuj">🎤</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider master">📋 Inwentaryzacja</div>
+    <div id="rooms-list"></div>
+
+    <div class="add-room-bar">
+      <button class="btn btn-secondary btn-sm" id="btn-add-room">+ Dodaj pomieszczenie</button>
+    </div>
+
+    <!-- STAN TECHNICZNY LOKALU -->
+    <div class="card" id="stan-techniczny-card">
+      <h2>🏗️ Stan techniczny lokalu</h2>
+      <p style="font-size: 13px; color: var(--muted); margin: 0 0 8px;">
+        Ocena ścian, podłogi, okien, sufitów i drzwi w każdym pomieszczeniu.
+      </p>
+      <div id="stan-techniczny-list"></div>
+    </div>
+
+    <!-- Uwagi -->
+    <div class="card">
+      <h2>📝 Uwagi końcowe</h2>
+      <div class="field">
+        <div class="input-with-mic">
+          <textarea id="f-uwagi" placeholder="zauważone defekty, ustalenia z najemcą, kaucja, terminy..."></textarea>
+          <button class="mic-btn" type="button" data-mic="#f-uwagi" title="Dyktuj">🎤</button>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <section class="screen" id="screen-preview">
+    <div id="preview-content"></div>
+  </section>
+
+  <div class="actionbar" id="actionbar" style="display:none">
+    <button class="btn btn-secondary" id="btn-save">💾 Zapisz</button>
+    <button class="btn btn-primary" id="btn-pdf">📄 Generuj PDF</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+</div>
+
+<!-- Modal: wybór pomieszczenia dodatkowego (z formularza) -->
+<dialog id="room-picker" style="border:0; border-radius: 14px; padding: 0; max-width: 90vw; width: 360px;">
+  <div style="padding: 16px;">
+    <h3 style="margin: 0 0 12px; color: var(--brand);">Dodaj pomieszczenie</h3>
+    <div id="room-picker-list" style="display: grid; gap: 8px;"></div>
+    <button class="btn btn-ghost btn-full" id="btn-cancel-room" style="margin-top: 12px;">Anuluj</button>
+  </div>
+</dialog>
+
+<!-- Modal: po wygenerowaniu PDF (udostępnianie / WhatsApp) -->
+<dialog id="share-modal" style="border:0; border-radius: 14px; padding: 0; max-width: 95vw; width: 420px;">
+  <div style="padding: 18px;">
+    <h3 style="margin: 0 0 6px; color: var(--brand);">✅ PDF gotowy</h3>
+    <p style="margin: 0 0 16px; font-size: 13px; color: var(--muted);">
+      Plik został pobrany na urządzenie. Wyślij go dalej:
+    </p>
+    <button class="btn btn-primary btn-full" id="btn-share-pdf" type="button" style="margin-bottom: 8px;">
+      📤 Udostępnij plik (WhatsApp, Mail...)
+    </button>
+    <button class="btn btn-secondary btn-full" id="btn-whatsapp-pdf" type="button" style="margin-bottom: 8px;">
+      💬 Otwórz WhatsApp do <span id="wa-phone-label">668 169 986</span>
+    </button>
+    <button class="btn btn-ghost btn-full" id="btn-close-share" type="button">Zamknij</button>
+  </div>
+</dialog>
+
+<!-- Modal: OCR (skan dowodu / dokumentu) -->
+<dialog id="ocr-modal" style="border:0; border-radius: 14px; padding: 0; max-width: 95vw; width: 460px;">
+  <div style="padding: 16px; max-height: 85vh; overflow-y: auto;">
+    <h3 style="margin: 0 0 6px; color: var(--brand);">📷 Skanuj dokument</h3>
+    <p style="margin: 0 0 14px; font-size: 13px; color: var(--muted);">
+      Zrób zdjęcie dowodu osobistego lub strony umowy z danymi najemcy. System rozpozna imię, nazwisko i PESEL.
+    </p>
+    <label for="ocr-file" class="btn btn-secondary btn-full" style="cursor: pointer;">
+      📷 Wybierz zdjęcie / zrób aparatem
+    </label>
+    <input type="file" id="ocr-file" accept="image/*" capture="environment" style="display:none;">
+    <img id="ocr-preview" style="max-width: 100%; max-height: 180px; display: none; margin-top: 12px; border-radius: 8px; border: 1px solid var(--border);">
+    <div id="ocr-status" style="margin-top: 10px; font-size: 13px; color: var(--muted);"></div>
+    <div id="ocr-results" style="margin-top: 14px; display: none;">
+      <div class="field">
+        <label>Imię i nazwisko</label>
+        <input type="text" id="ocr-imie">
+      </div>
+      <div class="field">
+        <label>PESEL</label>
+        <input type="text" id="ocr-pesel" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label>Adres (jeśli wykryto)</label>
+        <input type="text" id="ocr-adres">
+      </div>
+    </div>
+    <div style="display: flex; gap: 6px; margin-top: 16px;">
+      <button class="btn btn-ghost" id="btn-cancel-ocr" type="button">Anuluj</button>
+      <button class="btn btn-primary" id="btn-apply-ocr" type="button" style="flex:1;" disabled>Wypełnij dane najemcy</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Modal: podpisy przed PDF -->
+<dialog id="signatures-modal" style="border:0; border-radius: 14px; padding: 0; max-width: 95vw; width: 480px;">
+  <div style="padding: 16px; max-height: 85vh; overflow-y: auto;">
+    <h3 style="margin: 0 0 6px; color: var(--brand);">✍️ Podpisy stron</h3>
+    <p style="margin: 0 0 14px; font-size: 13px; color: var(--muted);">
+      Podpisz palcem na ekranie. Możesz też pominąć ten krok, wtedy PDF wygeneruje się z miejscem na podpis odręczny.
+    </p>
+    <div id="signatures-list"></div>
+    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px;">
+      <button class="btn btn-ghost" id="btn-cancel-sig" type="button">Anuluj</button>
+      <button class="btn btn-secondary" id="btn-skip-sig" type="button">Pomiń, generuj puste</button>
+      <button class="btn btn-primary" id="btn-save-sig" type="button" style="flex:1;">📄 Zapisz i generuj PDF</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Modal: dodaj pozycję do pokoju -->
+<dialog id="pos-adder" style="border:0; border-radius: 14px; padding: 0; max-width: 90vw; width: 360px;">
+  <div style="padding: 16px;">
+    <h3 style="margin: 0 0 12px; color: var(--brand);">Dodaj pozycję</h3>
+    <div class="field">
+      <label>Nazwa</label>
+      <div class="input-with-mic">
+        <input type="text" id="pos-add-name" placeholder="np. Wieszak na płaszcze">
+        <button class="mic-btn" type="button" data-mic="#pos-add-name" title="Dyktuj">🎤</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Typ</label>
+      <select id="pos-add-typ">
+        <option value="stan">Stan (BDB/DB/Średni/Zły/Brak)</option>
+        <option value="ilosc">Ilość (liczba sztuk)</option>
+        <option value="tekst">Tekst (opis, marka)</option>
+      </select>
+    </div>
+    <div style="display: flex; gap: 6px;">
+      <button class="btn btn-ghost" id="btn-cancel-pos">Anuluj</button>
+      <button class="btn btn-primary btn-full" id="btn-confirm-pos">Dodaj</button>
+    </div>
+  </div>
+</dialog>
+
+<script src="data.js?v=25"></script>
+<script src="app.js?v=25"></script>
+
+</body>
+</html>
