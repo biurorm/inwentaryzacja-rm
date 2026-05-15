@@ -147,6 +147,17 @@ function isSpeechSupported() {
 let _activeMic = null;
 let _activeBtn = null;
 let _activeBaseValue = '';
+let _activeTimeout = null;
+
+function cleanupMic(btn) {
+  if (btn) {
+    btn.classList.remove('listening');
+    btn.textContent = '🎤';
+  }
+  if (_activeTimeout) { clearTimeout(_activeTimeout); _activeTimeout = null; }
+  _activeMic = null;
+  _activeBtn = null;
+}
 
 function startDictation(targetInput, btn) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -155,16 +166,17 @@ function startDictation(targetInput, btn) {
     return;
   }
 
-  // jeśli już nasłuchuje, klik powoduje stop (przycisk ten sam lub inny)
+  // jeśli już nasłuchuje — klik = stop (na ten sam lub inny przycisk)
   if (_activeMic) {
     try { _activeMic.stop(); } catch (e) {}
-    _activeMic = null;
-    if (_activeBtn === btn) return; // ten sam przycisk: tylko stop
+    try { _activeMic.abort(); } catch (e) {}
+    cleanupMic(_activeBtn);
+    if (_activeBtn === btn) return;
   }
 
   const rec = new SR();
   rec.lang = 'pl-PL';
-  rec.continuous = true;
+  rec.continuous = false; // single shot — lepiej działa na iOS Safari
   rec.interimResults = true;
   rec.maxAlternatives = 1;
 
@@ -173,7 +185,16 @@ function startDictation(targetInput, btn) {
   _activeBaseValue = targetInput.value || '';
   btn.classList.add('listening');
   btn.textContent = '⏹';
-  toast('Mów teraz...');
+
+  // Safety timeout: po 25s automatycznie zatrzymaj (na iOS gdy onend nie przyjdzie)
+  _activeTimeout = setTimeout(() => {
+    if (_activeMic === rec) {
+      try { rec.stop(); } catch (e) {}
+      try { rec.abort(); } catch (e) {}
+      cleanupMic(btn);
+      toast('Czas minął, naciśnij znów żeby kontynuować');
+    }
+  }, 25000);
 
   let finalTranscript = '';
 
@@ -198,21 +219,17 @@ function startDictation(targetInput, btn) {
     if (e.error === 'no-speech') {
       toast('Nie usłyszałem, spróbuj ponownie');
     } else if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-      toast('Brak dostępu do mikrofonu. Wejdź w ustawienia i pozwól.');
+      toast('Brak dostępu do mikrofonu. Wejdź w ustawienia Safari i pozwól.');
     } else if (e.error === 'audio-capture') {
       toast('Mikrofon niedostępny');
-    } else {
+    } else if (e.error !== 'aborted') {
       toast('Błąd dyktowania: ' + e.error);
     }
+    cleanupMic(btn);
   };
 
   rec.onend = () => {
-    btn.classList.remove('listening');
-    btn.textContent = '🎤';
-    if (_activeMic === rec) {
-      _activeMic = null;
-      _activeBtn = null;
-    }
+    cleanupMic(btn);
   };
 
   try { rec.start(); }
