@@ -381,7 +381,7 @@ function showScreen(name) {
   $('#actionbar').style.display = name === 'form' ? 'flex' : 'none';
 
   if (name === 'home') {
-    $('#header-subtitle').textContent = 'Inwentaryzacja najmu';
+    $('#header-subtitle').textContent = '';
     renderArchive();
   } else if (name === 'rooms-select') {
     $('#header-subtitle').textContent = state.typ + ', wybierz pomieszczenia';
