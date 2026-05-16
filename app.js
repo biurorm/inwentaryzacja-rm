@@ -263,6 +263,21 @@ function bindMicButtons(root = document) {
 }
 
 // ============ ZDJĘCIA: kompresja ============
+const _imgDimCache = new Map();
+function getImageDimensions(dataUrl) {
+  if (_imgDimCache.has(dataUrl)) return Promise.resolve(_imgDimCache.get(dataUrl));
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const dim = { w: img.naturalWidth || 1, h: img.naturalHeight || 1 };
+      _imgDimCache.set(dataUrl, dim);
+      resolve(dim);
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
 function compressImage(file, maxDim = 1280, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1425,31 +1440,42 @@ async function generatePDF(signatures = {}) {
     if (y + h > PAGE_H) { pdf.addPage(); y = M; }
   }
 
-  // Wstaw zdjęcia inline (siatka pod opisem pozycji)
-  function addInlinePhotos(photos) {
+  // Wstaw zdjęcia inline (siatka pod opisem pozycji) — proporcje zachowane
+  async function addInlinePhotos(photos) {
     if (!photos || photos.length === 0) return;
-    const photoW = 82;
-    const photoH = 58;
+    const slotW = 82;       // szerokość kolumny
+    const maxH = 100;       // maks. wysokość kadru (dla pionowych i szerokokątnych)
     const photoGap = 4;
     const perRow = 2;
-    let col = 0;
-    let rowStartY = y;
-    for (const src of photos) {
-      if (col === 0) {
-        ensureSpace(photoH + 3);
-        rowStartY = y;
+
+    // Pobierz realne wymiary każdego zdjęcia i przeskaluj do kadru
+    const sized = await Promise.all(photos.map(async src => {
+      try {
+        const { w, h } = await getImageDimensions(src);
+        const scale = Math.min(slotW / w, maxH / h);
+        return { src, w: w * scale, h: h * scale };
+      } catch (e) {
+        console.warn('img dim err', e);
+        return { src, w: slotW, h: 58 };
       }
-      const xp = M + 4 + col * (photoW + photoGap);
-      try { pdf.addImage(src, 'JPEG', xp, rowStartY, photoW, photoH); }
-      catch (e) { console.warn('inline photo err', e); }
-      col++;
-      if (col >= perRow) {
-        col = 0;
-        y = rowStartY + photoH + photoGap;
-      }
+    }));
+
+    // Układaj wiersze po 2 zdjęcia, wysokość wiersza = max(h) z pary
+    for (let i = 0; i < sized.length; i += perRow) {
+      const row = sized.slice(i, i + perRow);
+      const rowH = Math.max(...row.map(p => p.h));
+      ensureSpace(rowH + 3);
+      const rowStartY = y;
+      row.forEach((p, col) => {
+        const xSlot = M + 4 + col * (slotW + photoGap);
+        // wyśrodkuj poziomo w slocie + dociągnij do góry wiersza
+        const xp = xSlot + (slotW - p.w) / 2;
+        try { pdf.addImage(p.src, 'JPEG', xp, rowStartY, p.w, p.h); }
+        catch (e) { console.warn('inline photo err', e); }
+      });
+      y = rowStartY + rowH + photoGap;
     }
-    if (col > 0) y = rowStartY + photoH + 3;
-    else y += 1;
+    y += 1;
   }
 
   // HEADER, samo logo (bez tekstu pod spodem)
@@ -1563,16 +1589,16 @@ async function generatePDF(signatures = {}) {
   ensureSpace(40);
   y = pdfSection(pdf, 'STAN LICZNIKÓW', y, M, W);
   pdf.setFontSize(9);
-  state.liczniki.forEach(l => {
-    if (!l.numer && !l.odczyt && (!l.zdjecia || l.zdjecia.length === 0)) return;
+  for (const l of state.liczniki) {
+    if (!l.numer && !l.odczyt && (!l.zdjecia || l.zdjecia.length === 0)) continue;
     ensureSpace(7);
     pdf.setFont('Roboto', 'bold');
     pdf.text(`${l.nazwa}:`, M, y);
     pdf.setFont('Roboto', 'normal');
     pdf.text(`nr ${l.numer || '—'} | odczyt ${l.odczyt || '—'}`, M + 55, y);
     y += 5;
-    addInlinePhotos(l.zdjecia);
-  });
+    await addInlinePhotos(l.zdjecia);
+  }
   y += 3;
 
   // KLUCZE
@@ -1628,7 +1654,7 @@ async function generatePDF(signatures = {}) {
       ensureSpace(wrapped.length * 4 + 1);
       pdf.text(wrapped, M, y);
       y += wrapped.length * 4 + 1;
-      addInlinePhotos(poz.zdjecia);
+      await addInlinePhotos(poz.zdjecia);
     }
     y += 3;
   }
@@ -1649,13 +1675,13 @@ async function generatePDF(signatures = {}) {
     ensureSpace(20);
     y = pdfSection(pdf, 'STAN TECHNICZNY LOKALU', y, M, W);
     pdf.setFontSize(9);
-    techData.forEach(td => {
+    for (const td of techData) {
       ensureSpace(8);
       pdf.setFont('Roboto', 'bold');
       pdf.text(td.pomieszczenie, M, y);
       y += 5;
       pdf.setFont('Roboto', 'normal');
-      td.wpisy.forEach(w => {
+      for (const w of td.wpisy) {
         const stan = STAN_OPCJE.find(o => o.id === w.stan);
         const stanLabel = stan ? stan.label : '—';
         const uwagi = w.uwagi ? `, ${w.uwagi}` : '';
@@ -1664,10 +1690,10 @@ async function generatePDF(signatures = {}) {
         ensureSpace(wrapped.length * 4 + 1);
         pdf.text(wrapped, M, y);
         y += wrapped.length * 4 + 1;
-        addInlinePhotos(w.zdjecia);
-      });
+        await addInlinePhotos(w.zdjecia);
+      }
       y += 2;
-    });
+    }
   }
 
   // UWAGI
