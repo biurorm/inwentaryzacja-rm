@@ -336,6 +336,24 @@ function emptyNajemca() {
   return { imie: '', pesel: '', adres: '', telefon: '', email: '' };
 }
 
+// Role stron zależą od trybu.
+// WPIS (przekazanie najemcy): agent przekazuje, najemca odbiera.
+// WYPIS (odbiór od najemcy): najemca oddaje (przekazujący), agent odbiera.
+function getRoleConfig() {
+  if (state && state.typ === 'WYPIS') {
+    return {
+      agentLabel: 'ODBIERAJĄCY / WYNAJMUJĄCY (AGENT NIERUCHOMOŚCI)',
+      najemcaLabel: 'PRZEKAZUJĄCY / NAJEMCA',
+      agentFirst: false // najemca (przekazujący) idzie pierwszy
+    };
+  }
+  return {
+    agentLabel: 'PRZEKAZUJĄCY / WYNAJMUJĄCY',
+    najemcaLabel: 'ODBIERAJĄCY / NAJEMCA',
+    agentFirst: true
+  };
+}
+
 function makePomieszczenie(tpl) {
   return {
     id: uid(),
@@ -493,6 +511,7 @@ async function renderArchive() {
         <div class="meta">${fmtDate(it.data)} • ${countFilled(it)} pozycji</div>
       </div>
       <span class="badge ${it.typ === 'WPIS' ? 'wpis' : 'wypis'}">${it.typ}</span>
+      <button class="reuse-archive" title="${it.typ === 'WYPIS' ? 'Utwórz przekazanie (WPIS) na bazie tego odbioru, ze zdjęciami i odczytami' : 'Utwórz odbiór (WYPIS) na bazie tego przekazania, ze zdjęciami i odczytami'}" onclick="reuseInventory('${it.id}')">↪</button>
       <button class="delete-archive" onclick="deleteInventory('${it.id}')">🗑️</button>
     </div>
   `).join('');
@@ -510,6 +529,30 @@ window.loadInventory = async function(id) {
   state = await dbGet(id);
   if (!state) { toast('Nie znaleziono'); return; }
   if (!state.najemcy) state.najemcy = [emptyNajemca()];
+  showScreen('form');
+};
+
+// „Przekaż dalej": klonuje istniejący protokół jako nowy, w przeciwnym trybie.
+// Zostaje adres, liczniki (numery, odczyty, zdjęcia), akcesoria, pomieszczenia,
+// stan techniczny i zdjęcia. Czyści dane najemcy (nowy lokator) i datę na dziś.
+// Dzięki temu po odbiorze można od razu przekazać lokal bez ponownego chodzenia i fotografowania.
+window.reuseInventory = async function(id) {
+  const src = await dbGet(id);
+  if (!src) { toast('Nie znaleziono'); return; }
+  const nowyTyp = src.typ === 'WYPIS' ? 'WPIS' : 'WYPIS';
+  const komu = nowyTyp === 'WPIS' ? 'przekazania nowemu najemcy' : 'odbioru od najemcy';
+  if (!confirm(`Utworzyć nowy protokół ${nowyTyp} (${komu}) na bazie tego?\n\nZachowam adres, liczniki z odczytami i zdjęciami, pomieszczenia i stan techniczny ze zdjęciami. Dane najemcy wyczyszczę, datę ustawię na dziś. Oryginał zostaje nietknięty.`)) return;
+  const clone = JSON.parse(JSON.stringify(src));
+  clone.id = uid();
+  clone.typ = nowyTyp;
+  clone.data = todayISO();
+  clone.najemcy = [emptyNajemca()]; // nowy lokator, dane do wpisania
+  clone.uwagi = '';
+  clone.createdAt = Date.now();
+  clone.updatedAt = Date.now();
+  state = clone;
+  await dbPut(clone);
+  toast(nowyTyp === 'WPIS' ? 'Gotowe — nowy WPIS na bazie odbioru' : 'Gotowe — nowy WYPIS na bazie przekazania');
   showScreen('form');
 };
 
@@ -1309,14 +1352,14 @@ function resizeSigCanvas(canvas) {
 
 function buildSignatureItems() {
   const prz = getPrzekazujacy();
-  const items = [
-    { key: 'przekazujacy', label: 'PRZEKAZUJĄCY / WYNAJMUJĄCY', name: prz.imie || '' }
-  ];
-  (state.najemcy || []).forEach((n, i) => {
-    const titleBase = state.najemcy.length > 1 ? `ODBIERAJĄCY / NAJEMCA ${i + 1}` : 'ODBIERAJĄCY / NAJEMCA';
-    items.push({ key: 'najemca-' + i, label: titleBase, name: n.imie || '' });
-  });
-  return items;
+  const roles = getRoleConfig();
+  const agentItem = { key: 'przekazujacy', label: roles.agentLabel, name: prz.imie || '' };
+  const najemcaItems = (state.najemcy || []).map((n, i) => ({
+    key: 'najemca-' + i,
+    label: state.najemcy.length > 1 ? `${roles.najemcaLabel} ${i + 1}` : roles.najemcaLabel,
+    name: n.imie || ''
+  }));
+  return roles.agentFirst ? [agentItem, ...najemcaItems] : [...najemcaItems, agentItem];
 }
 
 function openSignaturesModal(onDone) {
@@ -1532,53 +1575,63 @@ async function generatePDF(signatures = {}) {
   pdf.text(fmtDate(state.data), M + 38, y);
   y += 8;
 
-  // PRZEKAZUJĄCY / WYNAJMUJĄCY
-  y = pdfSection(pdf, 'PRZEKAZUJĄCY / WYNAJMUJĄCY', y, M, W);
-  pdf.setFontSize(10).setFont('Roboto', 'normal');
-  const stanowiskoTxt = prz.stanowisko ? `, ${prz.stanowisko}` : '';
-  const dowodTxt = prz.dowod ? `, legitymujący się dowodem osobistym nr ${prz.dowod}` : '';
-  const waznTxt = prz.dataWaznosci ? ` z terminem ważności ${prz.dataWaznosci}` : '';
-  const adresTxt = prz.adres ? `, zamieszkały: ${prz.adres}` : '';
-  const stronyTxt = pdf.splitTextToSize(
-    `${prz.imie || ''}${stanowiskoTxt}${dowodTxt}${waznTxt}${adresTxt}.`,
-    W
-  );
-  pdf.text(stronyTxt, M, y);
-  y += stronyTxt.length * 5 + 4;
+  const roles = getRoleConfig();
 
-  // ODBIERAJĄCY / NAJEMCA
-  ensureSpace(30);
-  y = pdfSection(pdf, 'ODBIERAJĄCY / NAJEMCA', y, M, W);
-  pdf.setFontSize(10).setFont('Roboto', 'normal');
-  const najemcyAktywni = state.najemcy.filter(n => n.imie || n.pesel || n.adres || n.telefon || n.email);
-  if (najemcyAktywni.length === 0) {
-    pdf.setTextColor(150).setFont('Roboto', 'italic');
-    pdf.text('(brak danych najemcy)', M, y);
-    pdf.setTextColor(0).setFont('Roboto', 'normal');
-    y += 5;
-  }
-  najemcyAktywni.forEach((n, idx) => {
-    if (najemcyAktywni.length > 1) {
-      ensureSpace(6);
-      pdf.setFont('Roboto', 'bold');
-      pdf.text(`Najemca ${idx + 1}:`, M, y);
-      pdf.setFont('Roboto', 'normal');
+  // Blok agenta (Rafał) — w WPIS przekazujący, w WYPIS odbierający
+  const renderAgentBlock = () => {
+    ensureSpace(30);
+    y = pdfSection(pdf, roles.agentLabel, y, M, W);
+    pdf.setFontSize(10).setFont('Roboto', 'normal');
+    const stanowiskoTxt = prz.stanowisko ? `, ${prz.stanowisko}` : '';
+    const dowodTxt = prz.dowod ? `, legitymujący się dowodem osobistym nr ${prz.dowod}` : '';
+    const waznTxt = prz.dataWaznosci ? ` z terminem ważności ${prz.dataWaznosci}` : '';
+    const adresTxt = prz.adres ? `, zamieszkały: ${prz.adres}` : '';
+    const stronyTxt = pdf.splitTextToSize(
+      `${prz.imie || ''}${stanowiskoTxt}${dowodTxt}${waznTxt}${adresTxt}.`,
+      W
+    );
+    pdf.text(stronyTxt, M, y);
+    y += stronyTxt.length * 5 + 4;
+  };
+
+  // Blok najemcy — w WPIS odbierający, w WYPIS przekazujący
+  const renderNajemcaBlock = () => {
+    ensureSpace(30);
+    y = pdfSection(pdf, roles.najemcaLabel, y, M, W);
+    pdf.setFontSize(10).setFont('Roboto', 'normal');
+    const najemcyAktywni = state.najemcy.filter(n => n.imie || n.pesel || n.adres || n.telefon || n.email);
+    if (najemcyAktywni.length === 0) {
+      pdf.setTextColor(150).setFont('Roboto', 'italic');
+      pdf.text('(brak danych najemcy)', M, y);
+      pdf.setTextColor(0).setFont('Roboto', 'normal');
       y += 5;
     }
-    const lines = [];
-    lines.push(`Imię i nazwisko: ${n.imie || '(brak)'}`);
-    lines.push(`PESEL: ${n.pesel || '(brak)'}`);
-    if (n.adres) lines.push(`Adres zamieszkania: ${n.adres}`);
-    if (n.telefon) lines.push(`Telefon: ${n.telefon}`);
-    if (n.email) lines.push(`Email: ${n.email}`);
-    lines.forEach(ln => {
-      const wrapped = pdf.splitTextToSize(ln, W);
-      ensureSpace(wrapped.length * 5 + 1);
-      pdf.text(wrapped, M, y);
-      y += wrapped.length * 5 + 1;
+    najemcyAktywni.forEach((n, idx) => {
+      if (najemcyAktywni.length > 1) {
+        ensureSpace(6);
+        pdf.setFont('Roboto', 'bold');
+        pdf.text(`Najemca ${idx + 1}:`, M, y);
+        pdf.setFont('Roboto', 'normal');
+        y += 5;
+      }
+      const lines = [];
+      lines.push(`Imię i nazwisko: ${n.imie || '(brak)'}`);
+      lines.push(`PESEL: ${n.pesel || '(brak)'}`);
+      if (n.adres) lines.push(`Adres zamieszkania: ${n.adres}`);
+      if (n.telefon) lines.push(`Telefon: ${n.telefon}`);
+      if (n.email) lines.push(`Email: ${n.email}`);
+      lines.forEach(ln => {
+        const wrapped = pdf.splitTextToSize(ln, W);
+        ensureSpace(wrapped.length * 5 + 1);
+        pdf.text(wrapped, M, y);
+        y += wrapped.length * 5 + 1;
+      });
+      y += 2;
     });
-    y += 2;
-  });
+  };
+
+  if (roles.agentFirst) { renderAgentBlock(); renderNajemcaBlock(); }
+  else { renderNajemcaBlock(); renderAgentBlock(); }
   y += 2;
 
   // === MASTER: PROTOKÓŁ ZDAWCZO-ODBIORCZY ===
@@ -1589,15 +1642,27 @@ async function generatePDF(signatures = {}) {
   ensureSpace(40);
   y = pdfSection(pdf, 'STAN LICZNIKÓW', y, M, W);
   pdf.setFontSize(9);
+  let firstLicznik = true;
   for (const l of state.liczniki) {
     if (!l.numer && !l.odczyt && (!l.zdjecia || l.zdjecia.length === 0)) continue;
-    ensureSpace(7);
-    pdf.setFont('Roboto', 'bold');
+    const hasPhotos = l.zdjecia && l.zdjecia.length > 0;
+    // zapewnij że opis nie zostanie sam na dole strony bez swojego zdjęcia
+    ensureSpace(hasPhotos ? 26 : 8);
+    // cienki separator nad kolejnym licznikiem — oddziela opis od zdjęcia poprzedniego
+    if (!firstLicznik) {
+      y += 2.5;
+      pdf.setDrawColor(215).setLineWidth(0.2);
+      pdf.line(M, y, M + W, y);
+      y += 5;
+    }
+    firstLicznik = false;
+    // opis w kolorze marki, mocno związany ze zdjęciem tuż pod nim
+    pdf.setFont('Roboto', 'bold').setFontSize(9).setTextColor(9, 77, 71);
     pdf.text(`${l.nazwa}:`, M, y);
-    pdf.setFont('Roboto', 'normal');
-    pdf.text(`nr ${l.numer || '—'} | odczyt ${l.odczyt || '—'}`, M + 55, y);
-    y += 5;
-    await addInlinePhotos(l.zdjecia);
+    pdf.setFont('Roboto', 'normal').setTextColor(0);
+    pdf.text(`nr ${l.numer || '—'}   •   odczyt ${l.odczyt || '—'}`, M + 55, y);
+    y += hasPhotos ? 3 : 5;
+    if (hasPhotos) await addInlinePhotos(l.zdjecia);
   }
   y += 3;
 
@@ -1738,17 +1803,27 @@ async function generatePDF(signatures = {}) {
     if (name) pdf.text(name, xPos, yPos + SIG_H + 9);
   }
 
+  const sigRoles = getRoleConfig();
+  const najemca0Label = state.najemcy.length > 1 ? `${sigRoles.najemcaLabel} 1` : sigRoles.najemcaLabel;
+
   ensureSpace(SIG_BLOCK_H + 2);
   const yPair = y;
-  drawSig(M, yPair, 'PRZEKAZUJĄCY / WYNAJMUJĄCY', prz.imie || '', signatures['przekazujacy'], halfW);
-  drawSig(M + halfW + 10, yPair, state.najemcy.length > 1 ? 'ODBIERAJĄCY / NAJEMCA 1' : 'ODBIERAJĄCY / NAJEMCA',
-          state.najemcy[0]?.imie || '', signatures['najemca-0'], halfW);
+  if (sigRoles.agentFirst) {
+    // WPIS: lewa = agent (przekazujący), prawa = najemca (odbierający)
+    drawSig(M, yPair, sigRoles.agentLabel, prz.imie || '', signatures['przekazujacy'], halfW);
+    drawSig(M + halfW + 10, yPair, najemca0Label, state.najemcy[0]?.imie || '', signatures['najemca-0'], halfW);
+  } else {
+    // WYPIS: lewa = najemca (przekazujący), prawa = agent (odbierający)
+    drawSig(M, yPair, najemca0Label, state.najemcy[0]?.imie || '', signatures['najemca-0'], halfW);
+    drawSig(M + halfW + 10, yPair, sigRoles.agentLabel, prz.imie || '', signatures['przekazujacy'], halfW);
+  }
   y += SIG_BLOCK_H;
 
-  // Dodatkowi najemcy w nowych wierszach (po prawej)
+  // Dodatkowi najemcy w nowych wierszach (po tej samej stronie co pierwszy najemca)
+  const najemcaCol = sigRoles.agentFirst ? (M + halfW + 10) : M;
   for (let i = 1; i < state.najemcy.length; i++) {
     ensureSpace(SIG_BLOCK_H + 4);
-    drawSig(M + halfW + 10, y, `ODBIERAJĄCY / NAJEMCA ${i + 1}`,
+    drawSig(najemcaCol, y, `${sigRoles.najemcaLabel} ${i + 1}`,
             state.najemcy[i].imie || '', signatures['najemca-' + i], halfW);
     y += SIG_BLOCK_H + 2;
   }

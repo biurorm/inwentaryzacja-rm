@@ -515,6 +515,18 @@ textarea {
   padding: 4px 8px;
 }
 
+.list-item .reuse-archive {
+  background: transparent;
+  border: 0;
+  color: var(--brand, #094d47);
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+}
+.list-item .reuse-archive:active { transform: scale(0.9); }
+
 .empty-state {
   text-align: center;
   padding: 40px 20px;
