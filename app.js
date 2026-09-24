@@ -2,7 +2,7 @@
 // (c) Rafał Lenart, biuro@rmnieruchomosci.pl
 
 // numer wersji widoczny w zielonym pasku; podbijać razem z ?v= w index.html i CACHE w sw.js
-const WERSJA = 31;
+const WERSJA = 32;
 document.querySelectorAll('[data-wersja]').forEach(el => { el.textContent = 'v' + WERSJA; });
 
 // ============ STATE ============
@@ -399,6 +399,7 @@ function emptyStanTechniczny() {
 
 // ============ NAWIGACJA ============
 function showScreen(name) {
+  if (name === 'home' && window._nowaWersja) { location.reload(); return; }
   currentScreen = name;
   $$('.screen').forEach(s => s.classList.remove('active'));
   $(`#screen-${name}`).classList.add('active');
@@ -2168,7 +2169,16 @@ function initApp() {
   // Service Worker tylko na produkcji (HTTPS), nie na localhost
   const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   if ('serviceWorker' in navigator && !isLocalhost) {
-    try { await navigator.serviceWorker.register('sw.js'); } catch (e) { console.warn(e); }
+    // nowa wersja przejęła aplikację: przeładuj od razu na ekranie startowym,
+    // a w trakcie wypełniania dopiero po powrocie do startu (żeby nie zgubić wpisywanego tekstu)
+    const byloSterowane = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!byloSterowane || window._nowaWersja) return;
+      window._nowaWersja = true;
+      if (currentScreen === 'home') location.reload();
+      else toast('Jest nowa wersja aplikacji, włączy się po powrocie do startu');
+    });
+    try { await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }); } catch (e) { console.warn(e); }
   } else if (isLocalhost && 'serviceWorker' in navigator) {
     // wyrejestruj ewentualny SW z poprzednich testów
     const regs = await navigator.serviceWorker.getRegistrations();

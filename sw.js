@@ -1,5 +1,7 @@
 // Service Worker, działanie offline
-const CACHE = 'inwentaryzacja-rm-v31';
+// Strategia: pliki aplikacji najpierw z sieci (nowa wersja wchodzi od razu), bez zasięgu z cache.
+// Biblioteki z CDN (PDF, podpisy) z cache, bo się nie zmieniają, a muszą działać offline.
+const CACHE = 'inwentaryzacja-rm-v32';
 const FILES = [
   './',
   './index.html',
@@ -17,8 +19,9 @@ const FILES = [
 ];
 
 self.addEventListener('install', (event) => {
+  // cache: 'reload' omija pamięć przeglądarki, żeby do nowej wersji nie trafiły stare pliki
   event.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(FILES).catch(err => {
+    caches.open(CACHE).then(cache => cache.addAll(FILES.map(u => new Request(u, { cache: 'reload' }))).catch(err => {
       console.warn('Cache addAll failed:', err);
     }))
   );
@@ -36,17 +39,22 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.match(event.request).then(cached =>
-      cached ||
-      fetch(event.request).then(resp => {
-        // Zapisuj w cache na przyszłość (best effort)
-        const respClone = resp.clone();
-        caches.open(CACHE).then(cache => {
-          try { cache.put(event.request, respClone); } catch (e) {}
-        });
+  const zTejDomeny = new URL(event.request.url).origin === self.location.origin;
+  if (!zTejDomeny) {
+    event.respondWith(
+      caches.match(event.request).then(cached => cached || fetch(event.request).then(resp => {
+        const clone = resp.clone();
+        caches.open(CACHE).then(c => { try { c.put(event.request, clone); } catch (e) {} });
         return resp;
-      }).catch(() => cached)
-    )
+      }))
+    );
+    return;
+  }
+  event.respondWith(
+    fetch(event.request, { cache: 'no-cache' }).then(resp => {
+      const clone = resp.clone();
+      caches.open(CACHE).then(c => { try { c.put(event.request, clone); } catch (e) {} });
+      return resp;
+    }).catch(() => caches.match(event.request, { ignoreSearch: true }).then(c => c || caches.match('./index.html')))
   );
 });
