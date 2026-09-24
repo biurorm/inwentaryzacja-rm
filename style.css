@@ -901,6 +901,9 @@ textarea {
   border: 2px dashed var(--border);
   border-radius: 8px;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   cursor: crosshair;
 }
 .sig-item [data-sig-clear] {

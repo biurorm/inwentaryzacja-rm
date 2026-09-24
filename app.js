@@ -2,7 +2,7 @@
 // (c) Rafał Lenart, biuro@rmnieruchomosci.pl
 
 // numer wersji widoczny w zielonym pasku; podbijać razem z ?v= w index.html i CACHE w sw.js
-const WERSJA = 33;
+const WERSJA = 34;
 document.querySelectorAll('[data-wersja]').forEach(el => { el.textContent = 'v' + WERSJA; });
 
 // ============ STATE ============
@@ -1492,15 +1492,103 @@ function parseDokumentText(text) {
   return out;
 }
 
-// ============ PODPISY (signature_pad) ============
+// ============ PODPISY (własne pole: palec, rysik, mysz) ============
+// Biblioteka signature_pad brała tylko "główny" dotyk: gdy klient oparł dłoń na ekranie,
+// dłoń była główna, a rysik odrzucany. Tu rysik ma pierwszeństwo, dotyk dłoni jest
+// ignorowany, a kreska zaczęta dłonią tuż przed rysikiem znika. Działa też bez internetu.
 let _sigPads = {};
 
-function resizeSigCanvas(canvas) {
+function createSigPad(canvas) {
   const ratio = Math.max(window.devicePixelRatio || 1, 1);
   canvas.width = canvas.offsetWidth * ratio;
   canvas.height = canvas.offsetHeight * ratio;
   const ctx = canvas.getContext('2d');
   ctx.scale(ratio, ratio);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = ctx.fillStyle = '#0a0a0a';
+
+  let empty = true, penSeen = false;
+  let activeId = null, activeType = null, snap = null, snapEmpty = true;
+  let last = null, lastMid = null, lastW = 1.8;
+
+  const grubosc = e => (e.pointerType === 'pen' && e.pressure > 0) ? 0.8 + e.pressure * 2.2 : 1.8;
+
+  function start(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.pointerType === 'pen') penSeen = true;
+    else if (e.pointerType === 'touch' && penSeen) return; // dłoń przy rysiku
+    if (activeId !== null) {
+      if (e.pointerType !== 'pen' || activeType === 'pen') return;
+      // rysik przejmuje pole od dłoni: cofnij kreskę zrobioną dłonią
+      if (snap) { ctx.putImageData(snap, 0, 0); empty = snapEmpty; }
+    }
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    if (e.pointerType === 'touch') {
+      snap = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      snapEmpty = empty;
+    } else snap = null;
+    activeId = e.pointerId;
+    activeType = e.pointerType;
+    const r = canvas.getBoundingClientRect();
+    last = lastMid = { x: e.clientX - r.left, y: e.clientY - r.top };
+    lastW = grubosc(e);
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, lastW / 2, 0, Math.PI * 2);
+    ctx.fill();
+    empty = false;
+  }
+
+  function move(e) {
+    if (e.pointerId !== activeId) return;
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    if (!evs.length) evs = [e];
+    evs.forEach(ev => {
+      const p = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+      const mid = { x: (last.x + p.x) / 2, y: (last.y + p.y) / 2 };
+      const w = lastW * 0.6 + grubosc(ev) * 0.4;
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      ctx.moveTo(lastMid.x, lastMid.y);
+      ctx.quadraticCurveTo(last.x, last.y, mid.x, mid.y);
+      ctx.stroke();
+      last = p; lastMid = mid; lastW = w;
+    });
+  }
+
+  function end(e) {
+    if (e.pointerId !== activeId) return;
+    ctx.lineWidth = lastW;
+    ctx.beginPath();
+    ctx.moveTo(lastMid.x, lastMid.y);
+    ctx.lineTo(last.x, last.y);
+    ctx.stroke();
+    activeId = activeType = snap = null;
+  }
+
+  canvas.addEventListener('pointerdown', start);
+  canvas.addEventListener('pointermove', move);
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+  // bez przewijania, powiększania, menu i pisma odręcznego iPada nad polem podpisu
+  ['touchstart', 'touchmove'].forEach(t => canvas.addEventListener(t, e => e.preventDefault(), { passive: false }));
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+  return {
+    clear() {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+      empty = true;
+      activeId = activeType = snap = null;
+    },
+    isEmpty: () => empty,
+    toDataURL: type => canvas.toDataURL(type)
+  };
 }
 
 function buildSignatureItems() {
@@ -1516,11 +1604,6 @@ function buildSignatureItems() {
 }
 
 function openSignaturesModal(onDone) {
-  if (typeof SignaturePad === 'undefined') {
-    toast('Biblioteka podpisów niedostępna (brak internetu?), generuję PDF bez podpisów');
-    onDone({});
-    return;
-  }
   _sigPads = {};
   const items = buildSignatureItems();
   const list = $('#signatures-list');
@@ -1535,18 +1618,12 @@ function openSignaturesModal(onDone) {
   const dlg = $('#signatures-modal');
   dlg.showModal();
 
-  // init signature_pad po showModal (canvas musi być widoczny dla offsetWidth)
+  // pole podpisu po showModal (canvas musi być widoczny dla offsetWidth)
   requestAnimationFrame(() => {
     items.forEach(it => {
       const canvas = list.querySelector(`canvas[data-sig-key="${it.key}"]`);
       if (!canvas) return;
-      resizeSigCanvas(canvas);
-      const pad = new SignaturePad(canvas, {
-        penColor: '#0a0a0a',
-        minWidth: 0.8,
-        maxWidth: 2.6,
-        backgroundColor: 'rgba(255,255,255,0)'
-      });
+      const pad = createSigPad(canvas);
       _sigPads[it.key] = pad;
     });
   });

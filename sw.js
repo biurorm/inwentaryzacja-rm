@@ -1,7 +1,7 @@
 // Service Worker, działanie offline
 // Strategia: pliki aplikacji najpierw z sieci (nowa wersja wchodzi od razu), bez zasięgu z cache.
 // Biblioteki z CDN (PDF, podpisy) z cache, bo się nie zmieniają, a muszą działać offline.
-const CACHE = 'inwentaryzacja-rm-v33';
+const CACHE = 'inwentaryzacja-rm-v34';
 const FILES = [
   './',
   './index.html',
@@ -14,8 +14,7 @@ const FILES = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
-  'https://cdn.jsdelivr.net/npm/signature_pad@5/dist/signature_pad.umd.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'
 ];
 
 self.addEventListener('install', (event) => {
