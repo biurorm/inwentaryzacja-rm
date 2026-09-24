@@ -2,7 +2,7 @@
 // (c) Rafał Lenart, biuro@rmnieruchomosci.pl
 
 // numer wersji widoczny w zielonym pasku; podbijać razem z ?v= w index.html i CACHE w sw.js
-const WERSJA = 32;
+const WERSJA = 33;
 document.querySelectorAll('[data-wersja]').forEach(el => { el.textContent = 'v' + WERSJA; });
 
 // ============ STATE ============
@@ -340,7 +340,7 @@ function newInventory(typ) {
 }
 
 function emptyNajemca() {
-  return { rodzaj: 'prywatnie', imie: '', pesel: '', adres: '', telefon: '', email: '', firma: '', nip: '', funkcja: '' };
+  return { rodzaj: 'prywatnie', imie: '', pesel: '', adres: '', telefon: '', email: '', firma: '', nip: '', krs: '', regon: '', funkcja: '' };
 }
 
 // Role stron zależą od trybu.
@@ -741,6 +741,52 @@ function renderTechItemRow(p, e, ri) {
   `;
 }
 
+// ============ DANE FIRMY PO NIP (Biała lista VAT, Ministerstwo Finansów) ============
+// Publiczne API bez klucza, zwraca nazwę, adres, KRS, REGON i czasem reprezentantów.
+// Firmy spoza rejestru VAT (np. zwolnione) nie są na liście, wtedy dane wpisuje się ręcznie.
+function poprawnyNip(nip) {
+  if (!/^\d{10}$/.test(nip)) return false;
+  const w = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+  const suma = w.reduce((s, x, k) => s + x * +nip[k], 0);
+  return suma % 11 === +nip[9];
+}
+async function pobierzFirmePoNip(i, recznie) {
+  const n = state.najemcy[i];
+  const nip = (n.nip || '').replace(/\D/g, '');
+  if (!poprawnyNip(nip)) { if (recznie) toast('NIP powinien mieć 10 cyfr i poprawną sumę kontrolną'); return; }
+  n._nipPobrany = nip;
+  const btn = document.querySelector(`[data-nip-pobierz="${i}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  try {
+    const d = new Date();
+    const data = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const r = await fetch(`https://wl-api.mf.gov.pl/api/search/nip/${nip}?date=${data}`);
+    const j = await r.json().catch(() => ({}));
+    const s = j && j.result && j.result.subject;
+    if (!r.ok || !s) {
+      toast(r.status === 429 ? 'Limit zapytań na dziś wyczerpany, wpisz dane ręcznie' : 'Nie ma tej firmy na Białej liście VAT, wpisz dane ręcznie');
+      return;
+    }
+    n.nip = nip;
+    n.firma = s.name || n.firma;
+    n.adres = s.workingAddress || s.residenceAddress || n.adres;
+    n.krs = s.krs || '';
+    n.regon = s.regon || '';
+    const rep = (s.representatives || [])[0];
+    if (rep && !n.imie) n.imie = [rep.firstName, rep.lastName].filter(Boolean).join(' ') || rep.companyName || '';
+    renderNajemcy();
+    bindMicButtons();
+    autosave();
+    toast(`Pobrano: ${n.firma}${s.statusVat ? ' (VAT: ' + s.statusVat.toLowerCase() + ')' : ''}`);
+  } catch (e) {
+    toast('Brak połączenia, wpisz dane ręcznie');
+    n._nipPobrany = '';
+  } finally {
+    const b = document.querySelector(`[data-nip-pobierz="${i}"]`);
+    if (b) { b.disabled = false; b.textContent = '🔎 Pobierz'; }
+  }
+}
+
 function renderNajemcy() {
   const wrap = $('#najemcy-list');
   wrap.innerHTML = state.najemcy.map((n, i) => `
@@ -763,10 +809,10 @@ function renderNajemcy() {
         </div>
       </div>
       <div class="field">
-        <label>NIP</label>
+        <label>NIP (dane firmy pobiorą się same)</label>
         <div class="input-with-mic">
-          <input type="text" id="f-najemca-nip-${i}" inputmode="numeric" value="${escapeAttr(n.nip)}" data-najemca-field="nip" data-najemca-idx="${i}">
-          ${micButton(`#f-najemca-nip-${i}`)}
+          <input type="text" id="f-najemca-nip-${i}" inputmode="numeric" value="${escapeAttr(n.nip)}" data-najemca-field="nip" data-najemca-idx="${i}" placeholder="10 cyfr">
+          <button class="nip-btn" type="button" data-nip-pobierz="${i}" title="Pobierz dane firmy z Białej listy VAT">🔎 Pobierz</button>
         </div>
       </div>
       <div class="field-row">
@@ -846,6 +892,17 @@ function renderNajemcy() {
       const f = inp.dataset.najemcaField;
       state.najemcy[i][f] = inp.value;
       autosave();
+    });
+  });
+  // NIP: po wpisaniu 10 cyfr albo przycisku pobieramy nazwę i adres firmy
+  wrap.querySelectorAll('[data-nip-pobierz]').forEach(btn => {
+    btn.addEventListener('click', () => pobierzFirmePoNip(+btn.dataset.nipPobierz, true));
+  });
+  wrap.querySelectorAll('input[data-najemca-field="nip"]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const i = +inp.dataset.najemcaIdx;
+      const cyfry = inp.value.replace(/\D/g, '');
+      if (cyfry.length === 10 && cyfry !== state.najemcy[i]._nipPobrany) pobierzFirmePoNip(i, false);
     });
   });
   wrap.querySelectorAll('[data-najemca-rodzaj]').forEach(btn => {
@@ -1711,7 +1768,7 @@ async function generatePDF(signatures = {}) {
       const lines = [];
       if (n.rodzaj === 'firma') {
         lines.push(`Firma: ${n.firma || '(brak)'}`);
-        if (n.nip) lines.push(`NIP: ${n.nip}`);
+        if (n.nip) lines.push(`NIP: ${n.nip}${n.regon ? ', REGON: ' + n.regon : ''}${n.krs ? ', KRS: ' + n.krs : ''}`);
         if (n.adres) lines.push(`Adres siedziby: ${n.adres}`);
         lines.push(`Reprezentowana przez: ${n.imie || '(brak)'}${n.funkcja ? ', ' + n.funkcja : ''}`);
       } else {

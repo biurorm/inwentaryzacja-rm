@@ -922,3 +922,5 @@ textarea {
 .tech-own { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #d6d3d1); }
 header .header-right { display: flex; align-items: center; gap: 8px; flex: none; }
 .wersja { font-size: 12px; opacity: .8; background: rgba(255,255,255,.14); padding: 3px 8px; border-radius: 20px; white-space: nowrap; }
+.nip-btn { flex: none; border: 1px solid var(--brand); background: var(--brand); color: #fff; border-radius: 10px; padding: 0 12px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.nip-btn:disabled { opacity: .6; }

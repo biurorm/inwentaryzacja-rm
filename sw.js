@@ -1,7 +1,7 @@
 // Service Worker, działanie offline
 // Strategia: pliki aplikacji najpierw z sieci (nowa wersja wchodzi od razu), bez zasięgu z cache.
 // Biblioteki z CDN (PDF, podpisy) z cache, bo się nie zmieniają, a muszą działać offline.
-const CACHE = 'inwentaryzacja-rm-v32';
+const CACHE = 'inwentaryzacja-rm-v33';
 const FILES = [
   './',
   './index.html',
