@@ -96,7 +96,12 @@ const LS_PRZEKAZUJACY = 'rm_przekazujacy_v1';
 function getPrzekazujacy() {
   try {
     const raw = localStorage.getItem(LS_PRZEKAZUJACY);
-    if (raw) return { ...DEFAULT_PRZEKAZUJACY, ...JSON.parse(raw) };
+    if (raw) {
+      // nr dowodu i data ważności nie są już zbierane, stare wartości kasujemy z telefonu
+      const d = JSON.parse(raw);
+      if ('dowod' in d || 'dataWaznosci' in d) { delete d.dowod; delete d.dataWaznosci; savePrzekazujacy(d); }
+      return { ...DEFAULT_PRZEKAZUJACY, ...d };
+    }
   } catch (e) { console.warn(e); }
   return { ...DEFAULT_PRZEKAZUJACY };
 }
@@ -110,15 +115,13 @@ function renderPrzekazujacyOnHome() {
   const d = getPrzekazujacy();
   $('#prz-imie').value = d.imie || '';
   $('#prz-stanowisko').value = d.stanowisko || '';
-  $('#prz-dowod').value = d.dowod || '';
-  $('#prz-dataWaznosci').value = d.dataWaznosci || '';
   $('#prz-adres').value = d.adres || '';
   $('#prz-telefon').value = d.telefon || '';
   $('#prz-email').value = d.email || '';
 }
 
 function bindPrzekazujacyInputs() {
-  const fields = ['imie','stanowisko','dowod','dataWaznosci','adres','telefon','email'];
+  const fields = ['imie','stanowisko','adres','telefon','email'];
   fields.forEach(f => {
     const inp = document.getElementById('prz-' + f);
     if (!inp) return;
@@ -333,7 +336,7 @@ function newInventory(typ) {
 }
 
 function emptyNajemca() {
-  return { imie: '', pesel: '', adres: '', telefon: '', email: '' };
+  return { rodzaj: 'prywatnie', imie: '', pesel: '', adres: '', telefon: '', email: '', firma: '', nip: '', funkcja: '' };
 }
 
 // Role stron zależą od trybu.
@@ -429,8 +432,8 @@ function renderRoomsSelect() {
       </p>
       <div id="rooms-checks" style="display: grid; gap: 8px;"></div>
       <div style="margin-top: 16px;">
-        <label>Własne pomieszczenie (opcjonalnie)</label>
-        <input type="text" id="custom-room-pick" placeholder="np. Antresola, Garaż, Strych...">
+        <label>Własne pomieszczenia (opcjonalnie, kilka oddziel przecinkiem)</label>
+        <input type="text" id="custom-room-pick" placeholder="np. Antresola, Garaż, Strych">
       </div>
       <button class="btn btn-primary btn-full" id="btn-rooms-next" style="margin-top: 16px;">
         Dalej, wypełnianie →
@@ -475,10 +478,9 @@ function renderRoomsSelect() {
         state.pomieszczenia.push(makePomieszczenie(p));
       }
     });
-    const custom = $('#custom-room-pick').value.trim();
-    if (custom) {
-      state.pomieszczenia.push(makePomieszczenie({ nazwa: custom, ikona: '🚪', pozycje: [] }));
-    }
+    $('#custom-room-pick').value.split(',').map(s => s.trim()).filter(Boolean).forEach(nazwa => {
+      state.pomieszczenia.push(makePomieszczenie({ nazwa, ikona: '🚪', pozycje: [] }));
+    });
     if (state.pomieszczenia.length === 0) {
       toast('Wybierz przynajmniej jedno pomieszczenie');
       return;
@@ -583,10 +585,7 @@ function renderForm() {
 
 function renderStanTechniczny() {
   const wrap = $('#stan-techniczny-list');
-  if (!state.pomieszczenia || state.pomieszczenia.length === 0) {
-    wrap.innerHTML = '<div style="color: var(--muted); font-size: 13px; padding: 12px;">Najpierw dodaj pomieszczenia powyżej.</div>';
-    return;
-  }
+  if (!state.pomieszczenia) state.pomieszczenia = [];
 
   // upewnij się że wszystkie pomieszczenia mają stanTechniczny (dla starych wpisów)
   state.pomieszczenia.forEach(p => {
@@ -609,6 +608,10 @@ function renderStanTechniczny() {
       </div>
       <div class="tech-group-body">
         ${state.pomieszczenia.map((p, ri) => renderTechItemRow(p, e, ri)).join('')}
+        <div class="own-room-row tech-own">
+          <input type="text" data-tech-own-name="${e.id}" placeholder="Własne pomieszczenie, np. Balkon, Garaż">
+          <button class="btn btn-secondary btn-sm" data-tech-own-add="${e.id}" type="button">+ Dodaj</button>
+        </div>
       </div>
     </div>
   `).join('');
@@ -620,6 +623,25 @@ function renderStanTechniczny() {
       state.techElementOpen[eid] = !state.techElementOpen[eid];
       renderStanTechniczny();
     });
+  });
+
+  // bind: własne pomieszczenie dopisane w stanie technicznym trafia też do listy pomieszczeń
+  // (pojawia się we wszystkich elementach: ściany, podłoga, sufit, okna, drzwi)
+  wrap.querySelectorAll('[data-tech-own-add]').forEach(btn => {
+    const eid = btn.dataset.techOwnAdd;
+    const inp = wrap.querySelector(`[data-tech-own-name="${eid}"]`);
+    const dodaj = () => {
+      const nazwa = inp.value.trim();
+      if (!nazwa) { inp.focus(); return; }
+      state.pomieszczenia.push(makePomieszczenie({ nazwa, ikona: '🚪', pozycje: [] }));
+      state.techElementOpen[eid] = true;
+      renderRooms();
+      renderStanTechniczny();
+      autosave();
+      toast(`Dodano: ${nazwa}`);
+    };
+    btn.addEventListener('click', dodaj);
+    inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); dodaj(); } });
   });
 
   // bind: stan buttons
@@ -720,9 +742,44 @@ function renderNajemcy() {
     <div class="najemca-card" data-najemca="${i}">
       <div class="najemca-header">
         <span class="najemca-title">Najemca ${i + 1}</span>
-        <button class="btn-mini-scan" data-scan-najemca="${i}" type="button" title="Skanuj dowód lub stronę umowy">📷 Skanuj</button>
+        ${n.rodzaj === 'firma' ? '' : `<button class="btn-mini-scan" data-scan-najemca="${i}" type="button" title="Skanuj dowód lub stronę umowy">📷 Skanuj</button>`}
         ${state.najemcy.length > 1 ? `<button class="btn-mini-danger" data-del-najemca="${i}">✕ usuń</button>` : ''}
       </div>
+      <div class="rodzaj-toggle">
+        <button type="button" class="${n.rodzaj !== 'firma' ? 'active' : ''}" data-najemca-rodzaj="prywatnie" data-najemca-idx="${i}">👤 Prywatnie</button>
+        <button type="button" class="${n.rodzaj === 'firma' ? 'active' : ''}" data-najemca-rodzaj="firma" data-najemca-idx="${i}">🏢 Firma</button>
+      </div>
+      ${n.rodzaj === 'firma' ? `
+      <div class="field">
+        <label>Nazwa firmy</label>
+        <div class="input-with-mic">
+          <input type="text" id="f-najemca-firma-${i}" value="${escapeAttr(n.firma)}" data-najemca-field="firma" data-najemca-idx="${i}">
+          ${micButton(`#f-najemca-firma-${i}`)}
+        </div>
+      </div>
+      <div class="field">
+        <label>NIP</label>
+        <div class="input-with-mic">
+          <input type="text" id="f-najemca-nip-${i}" inputmode="numeric" value="${escapeAttr(n.nip)}" data-najemca-field="nip" data-najemca-idx="${i}">
+          ${micButton(`#f-najemca-nip-${i}`)}
+        </div>
+      </div>
+      <div class="field-row">
+        <div>
+          <label>Reprezentant (imię i nazwisko)</label>
+          <div class="input-with-mic">
+            <input type="text" id="f-najemca-imie-${i}" value="${escapeAttr(n.imie)}" data-najemca-field="imie" data-najemca-idx="${i}">
+            ${micButton(`#f-najemca-imie-${i}`)}
+          </div>
+        </div>
+        <div>
+          <label>Funkcja</label>
+          <div class="input-with-mic">
+            <input type="text" id="f-najemca-funkcja-${i}" value="${escapeAttr(n.funkcja)}" placeholder="np. prezes zarządu" data-najemca-field="funkcja" data-najemca-idx="${i}">
+            ${micButton(`#f-najemca-funkcja-${i}`)}
+          </div>
+        </div>
+      </div>` : `
       <div class="field">
         <label>Imię i nazwisko</label>
         <div class="input-with-mic">
@@ -736,9 +793,9 @@ function renderNajemcy() {
           <input type="text" id="f-najemca-pesel-${i}" inputmode="numeric" value="${escapeAttr(n.pesel)}" data-najemca-field="pesel" data-najemca-idx="${i}">
           ${micButton(`#f-najemca-pesel-${i}`)}
         </div>
-      </div>
+      </div>`}
       <div class="field">
-        <label>Adres zamieszkania</label>
+        <label>${n.rodzaj === 'firma' ? 'Adres siedziby' : 'Adres zamieszkania'}</label>
         <div class="input-with-mic">
           <input type="text" id="f-najemca-adres-${i}" value="${escapeAttr(n.adres)}" data-najemca-field="adres" data-najemca-idx="${i}">
           ${micButton(`#f-najemca-adres-${i}`)}
@@ -783,6 +840,16 @@ function renderNajemcy() {
       const i = +inp.dataset.najemcaIdx;
       const f = inp.dataset.najemcaField;
       state.najemcy[i][f] = inp.value;
+      autosave();
+    });
+  });
+  wrap.querySelectorAll('[data-najemca-rodzaj]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const n = state.najemcy[+btn.dataset.najemcaIdx];
+      n.rodzaj = btn.dataset.najemcaRodzaj;
+      if (n.rodzaj === 'firma') n.pesel = ''; // przy firmie reprezentant bez PESEL
+      renderNajemcy();
+      bindMicButtons();
       autosave();
     });
   });
@@ -873,9 +940,15 @@ function renderAkcesoria() {
         </div>
       `;
     }
+    // komplet kluczy: wybór, do czego (także w starych wpisach bez listy obiektów)
+    const kluczeDo = /^Komplet kluczy do /.test(a.nazwa);
+    const obiekty = a.obiekty || (kluczeDo ? ['mieszkania', 'lokalu', 'budynku', 'domu'] : null);
+    const nazwaHtml = obiekty && kluczeDo
+      ? `Komplet kluczy do <select class="akc-obiekt" data-akc-obiekt="${i}">${obiekty.map(o => `<option${a.nazwa === 'Komplet kluczy do ' + o ? ' selected' : ''}>${o}</option>`).join('')}</select>`
+      : a.nazwa;
     return `
       <div class="akcesoria-row">
-        <div class="akcesoria-name">${a.nazwa}</div>
+        <div class="akcesoria-name">${nazwaHtml}</div>
         <div class="ilosc-row">
           <button class="ilosc-btn" data-akc="${i}" data-act="-">−</button>
           <input type="number" class="ilosc-input" data-akc-input="${i}" value="${a.wartosc}" min="0">
@@ -898,6 +971,12 @@ function renderAkcesoria() {
     inp.addEventListener('input', () => {
       const i = +inp.dataset.akcInput;
       state.akcesoria[i].wartosc = Math.max(0, parseInt(inp.value) || 0);
+      autosave();
+    });
+  });
+  wrap.querySelectorAll('[data-akc-obiekt]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      state.akcesoria[+sel.dataset.akcObiekt].nazwa = 'Komplet kluczy do ' + sel.value;
       autosave();
     });
   });
@@ -1029,6 +1108,7 @@ function renderRooms() {
       if (!confirm(`Usunąć pomieszczenie „${state.pomieszczenia[ri].nazwa}"?`)) return;
       state.pomieszczenia.splice(ri, 1);
       renderRooms();
+      renderStanTechniczny(); // numeracja pomieszczeń w stanie technicznym musi się zgadzać
       autosave();
     });
   });
@@ -1182,6 +1262,16 @@ function getPhotosByKey(key) {
 function openRoomPicker() {
   const dlg = $('#room-picker');
   const list = $('#room-picker-list');
+  const own = $('#room-picker-own');
+  own.value = '';
+  const dodajWlasne = () => {
+    const nazwa = own.value.trim();
+    if (!nazwa) { own.focus(); return; }
+    addRoomFromTemplate({ nazwa, ikona: '🚪', pozycje: [] });
+    dlg.close();
+  };
+  $('#btn-room-own').onclick = dodajWlasne;
+  own.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); dodajWlasne(); } };
   list.innerHTML = POMIESZCZENIA_DOSTEPNE.map((p, i) => `
     <button class="btn btn-secondary" data-pick-room="${i}" style="justify-content: flex-start;">
       <span style="font-size: 20px;">${p.ikona}</span>
@@ -1204,6 +1294,7 @@ function addRoomFromTemplate(tpl) {
     open: true
   });
   renderRooms();
+  renderStanTechniczny();
   autosave();
 }
 
@@ -1583,11 +1674,9 @@ async function generatePDF(signatures = {}) {
     y = pdfSection(pdf, roles.agentLabel, y, M, W);
     pdf.setFontSize(10).setFont('Roboto', 'normal');
     const stanowiskoTxt = prz.stanowisko ? `, ${prz.stanowisko}` : '';
-    const dowodTxt = prz.dowod ? `, legitymujący się dowodem osobistym nr ${prz.dowod}` : '';
-    const waznTxt = prz.dataWaznosci ? ` z terminem ważności ${prz.dataWaznosci}` : '';
     const adresTxt = prz.adres ? `, zamieszkały: ${prz.adres}` : '';
     const stronyTxt = pdf.splitTextToSize(
-      `${prz.imie || ''}${stanowiskoTxt}${dowodTxt}${waznTxt}${adresTxt}.`,
+      `${prz.imie || ''}${stanowiskoTxt}${adresTxt}.`,
       W
     );
     pdf.text(stronyTxt, M, y);
@@ -1599,7 +1688,7 @@ async function generatePDF(signatures = {}) {
     ensureSpace(30);
     y = pdfSection(pdf, roles.najemcaLabel, y, M, W);
     pdf.setFontSize(10).setFont('Roboto', 'normal');
-    const najemcyAktywni = state.najemcy.filter(n => n.imie || n.pesel || n.adres || n.telefon || n.email);
+    const najemcyAktywni = state.najemcy.filter(n => n.imie || n.pesel || n.adres || n.telefon || n.email || n.firma || n.nip);
     if (najemcyAktywni.length === 0) {
       pdf.setTextColor(150).setFont('Roboto', 'italic');
       pdf.text('(brak danych najemcy)', M, y);
@@ -1615,9 +1704,16 @@ async function generatePDF(signatures = {}) {
         y += 5;
       }
       const lines = [];
-      lines.push(`Imię i nazwisko: ${n.imie || '(brak)'}`);
-      lines.push(`PESEL: ${n.pesel || '(brak)'}`);
-      if (n.adres) lines.push(`Adres zamieszkania: ${n.adres}`);
+      if (n.rodzaj === 'firma') {
+        lines.push(`Firma: ${n.firma || '(brak)'}`);
+        if (n.nip) lines.push(`NIP: ${n.nip}`);
+        if (n.adres) lines.push(`Adres siedziby: ${n.adres}`);
+        lines.push(`Reprezentowana przez: ${n.imie || '(brak)'}${n.funkcja ? ', ' + n.funkcja : ''}`);
+      } else {
+        lines.push(`Imię i nazwisko: ${n.imie || '(brak)'}`);
+        lines.push(`PESEL: ${n.pesel || '(brak)'}`);
+        if (n.adres) lines.push(`Adres zamieszkania: ${n.adres}`);
+      }
       if (n.telefon) lines.push(`Telefon: ${n.telefon}`);
       if (n.email) lines.push(`Email: ${n.email}`);
       lines.forEach(ln => {

@@ -910,3 +910,13 @@ textarea {
 @media print {
   .actionbar, header, .btn { display: none !important; }
 }
+
+/* v30: najemca prywatnie/firma, klucze do..., własne pomieszczenia */
+.rodzaj-toggle { display: flex; gap: 6px; margin: 4px 0 10px; }
+.rodzaj-toggle button { flex: 1; padding: 8px 10px; border: 1px solid var(--border, #d6d3d1); background: #fff; border-radius: 10px; font: inherit; font-size: 14px; cursor: pointer; }
+.rodzaj-toggle button.active { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+.akc-obiekt { font: inherit; font-weight: 600; padding: 2px 4px; border: 1px solid var(--border, #d6d3d1); border-radius: 6px; background: #fff; }
+.own-room-row { display: flex; gap: 6px; align-items: center; }
+.own-room-row input { flex: 1; min-width: 0; }
+.own-room-row .btn { flex: none; white-space: nowrap; }
+.tech-own { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #d6d3d1); }

@@ -14,13 +14,13 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="style.css?v=29">
+  <link rel="stylesheet" href="style.css?v=30">
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@5/dist/signature_pad.umd.min.js"></script>
-  <script src="roboto-fonts.js?v=29"></script>
+  <script src="roboto-fonts.js?v=30"></script>
 </head>
 <body>
 
@@ -128,22 +128,6 @@
             <button class="mic-btn" type="button" data-mic="#prz-stanowisko" title="Dyktuj">🎤</button>
           </div>
         </div>
-        <div class="field-row">
-          <div>
-            <label>Nr dowodu osobistego</label>
-            <div class="input-with-mic">
-              <input type="text" id="prz-dowod">
-              <button class="mic-btn" type="button" data-mic="#prz-dowod" title="Dyktuj">🎤</button>
-            </div>
-          </div>
-          <div>
-            <label>Ważny do</label>
-            <div class="input-with-mic">
-              <input type="text" id="prz-dataWaznosci" placeholder="np. 04.07.2034">
-              <button class="mic-btn" type="button" data-mic="#prz-dataWaznosci" title="Dyktuj">🎤</button>
-            </div>
-          </div>
-        </div>
         <div class="field">
           <label>Adres zamieszkania</label>
           <div class="input-with-mic">
@@ -243,6 +227,12 @@
 <dialog id="room-picker" style="border:0; border-radius: 14px; padding: 0; max-width: 90vw; width: 360px;">
   <div style="padding: 16px;">
     <h3 style="margin: 0 0 12px; color: var(--brand);">Dodaj pomieszczenie</h3>
+    <label>Własne pomieszczenie</label>
+    <div class="own-room-row">
+      <input type="text" id="room-picker-own" placeholder="np. Garaż, Strych, Balkon">
+      <button class="btn btn-primary btn-sm" id="btn-room-own" type="button">+ Dodaj</button>
+    </div>
+    <div style="font-size: 12px; color: var(--muted); margin: 10px 0 6px;">albo wybierz gotowe:</div>
     <div id="room-picker-list" style="display: grid; gap: 8px;"></div>
     <button class="btn btn-ghost btn-full" id="btn-cancel-room" style="margin-top: 12px;">Anuluj</button>
   </div>
@@ -341,8 +331,8 @@
   </div>
 </dialog>
 
-<script src="data.js?v=29"></script>
-<script src="app.js?v=29"></script>
+<script src="data.js?v=30"></script>
+<script src="app.js?v=30"></script>
 
 </body>
 </html>

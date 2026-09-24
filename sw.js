@@ -1,5 +1,5 @@
 // Service Worker, działanie offline
-const CACHE = 'inwentaryzacja-rm-v29';
+const CACHE = 'inwentaryzacja-rm-v30';
 const FILES = [
   './',
   './index.html',

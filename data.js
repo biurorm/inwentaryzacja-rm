@@ -3,12 +3,10 @@
 // Każda zapisana inwentaryzacja ma własną kopię, zmiany tutaj nie wpływają na archiwum.
 
 // DANE PRZEKAZUJĄCEGO (wynajmującego), edytowalne w UI w formularzu, zapisane w localStorage.
-// Wrażliwe dane (dowód, adres) wpisujesz sam w aplikacji - nie są w publicznym repo.
+// Adres wpisujesz sam w aplikacji, nie ma go w publicznym repo. Nr dowodu nie jest zbierany.
 const DEFAULT_PRZEKAZUJACY = {
   imie: 'Rafał Lenart',
   stanowisko: 'pośrednik w obrocie nieruchomościami',
-  dowod: '',
-  dataWaznosci: '',
   adres: '',
   telefon: '668 169 986',
   email: 'biuro@rmnieruchomosci.pl'
@@ -38,7 +36,7 @@ const DEFAULT_LICZNIKI = [
 
 // AKCESORIA, typ: 'ilosc' lub 'tekst' (np. kod do domofonu)
 const DEFAULT_AKCESORIA = [
-  { nazwa: 'Komplet kluczy do mieszkania', typ: 'ilosc', wartosc: 1 },
+  { nazwa: 'Komplet kluczy do mieszkania', typ: 'ilosc', wartosc: 1, obiekty: ['mieszkania', 'lokalu', 'budynku', 'domu'] },
   { nazwa: 'Pilot do szlabanu',            typ: 'ilosc', wartosc: 0 },
   { nazwa: 'Klucze do piwnicy',            typ: 'ilosc', wartosc: 0 },
   { nazwa: 'Klucze do klatki',             typ: 'ilosc', wartosc: 0 },
