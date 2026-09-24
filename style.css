@@ -920,3 +920,5 @@ textarea {
 .own-room-row input { flex: 1; min-width: 0; }
 .own-room-row .btn { flex: none; white-space: nowrap; }
 .tech-own { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #d6d3d1); }
+header .header-right { display: flex; align-items: center; gap: 8px; flex: none; }
+.wersja { font-size: 12px; opacity: .8; background: rgba(255,255,255,.14); padding: 3px 8px; border-radius: 20px; white-space: nowrap; }
