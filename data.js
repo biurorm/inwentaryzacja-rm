@@ -24,13 +24,14 @@ const STAN_OPCJE = [
 // pole "grupa" tworzy wizualny nagłówek nad licznikami z tej samej grupy
 // pole "krotkaNazwa" pokazywane jest w UI w obrębie grupy (np. "Zimna woda")
 // pole "nazwa" to pełny opis (używany w PDF i archiwum)
+// liczniki wody mają "woda" (zimna/ciepla) i "miejsce" (kuchnia/lazienka/mieszkanie), do zmiany w aplikacji
 const DEFAULT_LICZNIKI = [
   { nazwa: 'Gazowy' },
   { nazwa: 'Energia elektryczna' },
-  { nazwa: 'Zimna woda, kuchnia',    krotkaNazwa: 'Zimna woda',  grupa: 'Kuchnia'  },
-  { nazwa: 'Ciepła woda, kuchnia',   krotkaNazwa: 'Ciepła woda', grupa: 'Kuchnia'  },
-  { nazwa: 'Zimna woda, łazienka',   krotkaNazwa: 'Zimna woda',  grupa: 'Łazienka' },
-  { nazwa: 'Ciepła woda, łazienka',  krotkaNazwa: 'Ciepła woda', grupa: 'Łazienka' },
+  { nazwa: 'Zimna woda, kuchnia',    krotkaNazwa: 'Zimna woda',  grupa: 'Kuchnia',  woda: 'zimna',  miejsce: 'kuchnia'  },
+  { nazwa: 'Ciepła woda, kuchnia',   krotkaNazwa: 'Ciepła woda', grupa: 'Kuchnia',  woda: 'ciepla', miejsce: 'kuchnia'  },
+  { nazwa: 'Zimna woda, łazienka',   krotkaNazwa: 'Zimna woda',  grupa: 'Łazienka', woda: 'zimna',  miejsce: 'lazienka' },
+  { nazwa: 'Ciepła woda, łazienka',  krotkaNazwa: 'Ciepła woda', grupa: 'Łazienka', woda: 'ciepla', miejsce: 'lazienka' },
   { nazwa: 'Węzeł cieplowniczy' }
 ];
 

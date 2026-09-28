@@ -2,10 +2,10 @@
 
 ## ZROBIONE 2026-05-15 (po testach na iPhonie)
 
-- Strona tytułowa PDF: Załącznik nr 5, "Protokół zdawczo-odbiorczy, inwentaryzacja", lokalizacja lokalu, dane przekazującego, dane najemcy z PESEL
+- Strona tytułowa PDF: Załącznik nr 5, "Protokół zdawczo-odbiorczy, inwentaryzacja", lokalizacja lokalu, dane przekazującego, dane najemcy (bez PESEL od v35)
 - Klauzula przed podpisem skrócona, bez wymieniania kluczy i liczników (są wcześniej w protokole)
 - "Data czynności" → "Data przekazania" (UI + PDF)
-- Mikrofon dyktowania dodany do każdej rubryki: PESEL, Telefon, Email, Numer/Odczyt liczników, Kod do domofonu, Nazwa nowej pozycji (w modalu)
+- Mikrofon dyktowania dodany do każdej rubryki: Telefon, Email, Numer/Odczyt liczników, Kod do domofonu, Nazwa nowej pozycji (w modalu)
 - Speech Recognition: `continuous = true`, `interimResults = true`, lepszy feedback (toast "Słucham..."), obsługa błędu no-speech / not-allowed
 - Stan techniczny: przycisk "📋 Zastosuj do wszystkich pomieszczeń" pod każdym elementem (Ściany / Podłoga / Okna / Sufit / Drzwi) kopiuje stan i uwagi do pozostałych pomieszczeń
 - Cache bumped do v9 (style.css, app.js, data.js, sw.js)
@@ -49,3 +49,5 @@ Funkcje zatwierdzone przez Rafała 2026-05-14:
 **Priorytet:** 1, 3, 2 (najpierw podpis bo blokuje legalność, potem email bo przyspiesza, na końcu porównanie bo dodatkowa wartość).
 
 **Timing:** następna sesja po testach Rafała na realnym mieszkaniu.
+
+- v35 (28.09.2026): PESEL najemcy usuniety calkiem (formularz, skan dokumentu, PDF, czyszczenie starych protokolow w telefonie). Liczniki wody: wybor Zimna/Ciepla i Kuchnia/Lazienka/Mieszkanie na kazdym liczniku, "+ Dodaj licznik wody", usuwanie licznika wody, automatyczne grupowanie po miejscu.

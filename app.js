@@ -2,7 +2,7 @@
 // (c) Rafał Lenart, biuro@rmnieruchomosci.pl
 
 // numer wersji widoczny w zielonym pasku; podbijać razem z ?v= w index.html i CACHE w sw.js
-const WERSJA = 34;
+const WERSJA = 35;
 document.querySelectorAll('[data-wersja]').forEach(el => { el.textContent = 'v' + WERSJA; });
 
 // ============ STATE ============
@@ -326,6 +326,8 @@ function newInventory(typ) {
       nazwa: l.nazwa,
       krotkaNazwa: l.krotkaNazwa || null,
       grupa: l.grupa || null,
+      woda: l.woda || null,
+      miejsce: l.miejsce || null,
       numer: '',
       odczyt: '',
       zdjecia: []
@@ -339,8 +341,22 @@ function newInventory(typ) {
   };
 }
 
+// PESEL nie jest już zbierany: kasujemy go z protokołu (także ze starych zapisów w telefonie)
+function bezPesel(inv) {
+  let zmiana = false;
+  (inv.najemcy || []).forEach(n => { if ('pesel' in n) { delete n.pesel; zmiana = true; } });
+  return zmiana;
+}
+
+async function wyczyscPeseleZArchiwum() {
+  try {
+    const wszystkie = await dbGetAll();
+    for (const inv of wszystkie) if (bezPesel(inv)) await dbPut(inv);
+  } catch (e) { console.warn('Czyszczenie PESEL', e); }
+}
+
 function emptyNajemca() {
-  return { rodzaj: 'prywatnie', imie: '', pesel: '', adres: '', telefon: '', email: '', firma: '', nip: '', krs: '', regon: '', funkcja: '' };
+  return { rodzaj: 'prywatnie', imie: '', adres: '', telefon: '', email: '', firma: '', nip: '', krs: '', regon: '', funkcja: '' };
 }
 
 // Role stron zależą od trybu.
@@ -536,6 +552,8 @@ window.loadInventory = async function(id) {
   state = await dbGet(id);
   if (!state) { toast('Nie znaleziono'); return; }
   if (!state.najemcy) state.najemcy = [emptyNajemca()];
+  bezPesel(state);
+  uzupelnijLicznikiWody(state.liczniki);
   showScreen('form');
 };
 
@@ -838,13 +856,7 @@ function renderNajemcy() {
           ${micButton(`#f-najemca-imie-${i}`)}
         </div>
       </div>
-      <div class="field">
-        <label>PESEL</label>
-        <div class="input-with-mic">
-          <input type="text" id="f-najemca-pesel-${i}" inputmode="numeric" value="${escapeAttr(n.pesel)}" data-najemca-field="pesel" data-najemca-idx="${i}">
-          ${micButton(`#f-najemca-pesel-${i}`)}
-        </div>
-      </div>`}
+`}
       <div class="field">
         <label>${n.rodzaj === 'firma' ? 'Adres siedziby' : 'Adres zamieszkania'}</label>
         <div class="input-with-mic">
@@ -909,7 +921,6 @@ function renderNajemcy() {
     btn.addEventListener('click', () => {
       const n = state.najemcy[+btn.dataset.najemcaIdx];
       n.rodzaj = btn.dataset.najemcaRodzaj;
-      if (n.rodzaj === 'firma') n.pesel = ''; // przy firmie reprezentant bez PESEL
       renderNajemcy();
       bindMicButtons();
       autosave();
@@ -933,6 +944,43 @@ function renderNajemcy() {
   });
 }
 
+// ============ LICZNIKI WODY: zimna/ciepła + kuchnia/łazienka/mieszkanie ============
+const WODA_MIEJSCA = [
+  { id: 'kuchnia',    label: 'Kuchnia' },
+  { id: 'lazienka',   label: 'Łazienka' },
+  { id: 'mieszkanie', label: 'Mieszkanie' }
+];
+
+function ustawLicznikWody(l) {
+  const m = WODA_MIEJSCA.find(x => x.id === l.miejsce) || WODA_MIEJSCA[2];
+  l.miejsce = m.id;
+  l.krotkaNazwa = l.woda === 'ciepla' ? 'Ciepła woda' : 'Zimna woda';
+  l.grupa = m.label;
+  l.nazwa = `${l.krotkaNazwa}, ${m.label.toLowerCase()}`;
+}
+
+// starsze protokoły nie mają pól woda/miejsce, odczytujemy je z nazwy (nazwy nie ruszamy)
+function uzupelnijLicznikiWody(liczniki) {
+  (liczniki || []).forEach(l => {
+    if (l.woda || !/woda/i.test(l.nazwa || '')) return;
+    const opis = `${l.nazwa} ${l.grupa || ''}`;
+    l.woda = /ciep/i.test(opis) ? 'ciepla' : 'zimna';
+    l.miejsce = /łazien|lazien/i.test(opis) ? 'lazienka' : /kuch/i.test(opis) ? 'kuchnia' : 'mieszkanie';
+  });
+}
+
+// liczniki wody trzymamy razem, po miejscu (kuchnia, łazienka, mieszkanie), zimna przed ciepłą
+function sortujLicznikiWody() {
+  const L = state.liczniki;
+  const pierwszy = L.findIndex(l => l.woda);
+  if (pierwszy < 0) return;
+  const kolejnosc = l => WODA_MIEJSCA.findIndex(m => m.id === l.miejsce) * 2 + (l.woda === 'ciepla' ? 1 : 0);
+  const wody = L.filter(l => l.woda).map((l, i) => ({ l, i }))
+    .sort((x, y) => kolejnosc(x.l) - kolejnosc(y.l) || x.i - y.i).map(x => x.l);
+  const reszta = L.filter(l => !l.woda);
+  state.liczniki = [...reszta.slice(0, pierwszy), ...wody, ...reszta.slice(pierwszy)];
+}
+
 function renderLiczniki() {
   const wrap = $('#liczniki-list');
   let html = '';
@@ -941,16 +989,26 @@ function renderLiczniki() {
     const grupa = l.grupa || null;
     if (grupa && grupa !== lastGrupa) {
       html += `<div class="licznik-group-header">📍 ${grupa}</div>`;
-    } else if (!grupa && lastGrupa !== null) {
-      // wracamy do pojedynczych liczników, separator zerowy
     }
     lastGrupa = grupa;
     const displayName = grupa ? (l.krotkaNazwa || l.nazwa) : l.nazwa;
     const numerId = `f-lic-numer-${i}`;
     const odczytId = `f-lic-odczyt-${i}`;
+    const wodaWybor = l.woda ? `
+        <div class="rodzaj-toggle woda-toggle">
+          <button type="button" class="${l.woda !== 'ciepla' ? 'active' : ''}" data-woda-rodzaj="zimna" data-licznik-idx="${i}">❄️ Zimna</button>
+          <button type="button" class="${l.woda === 'ciepla' ? 'active' : ''}" data-woda-rodzaj="ciepla" data-licznik-idx="${i}">🔥 Ciepła</button>
+        </div>
+        <div class="rodzaj-toggle woda-toggle">
+          ${WODA_MIEJSCA.map(m => `<button type="button" class="${l.miejsce === m.id ? 'active' : ''}" data-woda-miejsce="${m.id}" data-licznik-idx="${i}">${m.label}</button>`).join('')}
+        </div>` : '';
     html += `
-      <div class="licznik-card ${grupa ? 'in-group' : ''}">
-        <div class="name">${displayName}</div>
+      <div class="licznik-card ${grupa ? 'in-group' : ''}" data-licznik-card="${i}">
+        <div class="licznik-head">
+          <div class="name">${displayName}</div>
+          ${l.woda ? `<button class="btn-mini-danger" type="button" data-del-licznik="${i}">✕ usuń</button>` : ''}
+        </div>
+        ${wodaWybor}
         <div class="field">
           <label>Numer / "BRAK"</label>
           <div class="input-with-mic">
@@ -969,7 +1027,17 @@ function renderLiczniki() {
       </div>
     `;
   });
+  html += `<button class="btn btn-secondary btn-full" id="btn-add-woda" type="button" style="margin-top: 8px;">+ Dodaj licznik wody</button>`;
   wrap.innerHTML = html;
+
+  // po zmianie licznik może przeskoczyć do innej grupy, więc przewijamy do niego
+  const odswiez = (licznik) => {
+    sortujLicznikiWody();
+    renderLiczniki();
+    autosave();
+    const card = wrap.querySelector(`[data-licznik-card="${state.liczniki.indexOf(licznik)}"]`);
+    if (card) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
 
   wrap.querySelectorAll('input[data-licznik]').forEach(inp => {
     inp.addEventListener('input', (e) => {
@@ -978,6 +1046,41 @@ function renderLiczniki() {
       state.liczniki[idx][f] = e.target.value;
       autosave();
     });
+  });
+  wrap.querySelectorAll('[data-woda-rodzaj]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const l = state.liczniki[+btn.dataset.licznikIdx];
+      l.woda = btn.dataset.wodaRodzaj;
+      ustawLicznikWody(l);
+      odswiez(l);
+    });
+  });
+  wrap.querySelectorAll('[data-woda-miejsce]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const l = state.liczniki[+btn.dataset.licznikIdx];
+      l.miejsce = btn.dataset.wodaMiejsce;
+      ustawLicznikWody(l);
+      odswiez(l);
+    });
+  });
+  wrap.querySelectorAll('[data-del-licznik]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = +btn.dataset.delLicznik;
+      if (!confirm(`Usunąć licznik „${state.liczniki[i].nazwa}”?`)) return;
+      state.liczniki.splice(i, 1);
+      renderLiczniki();
+      autosave();
+    });
+  });
+  $('#btn-add-woda').addEventListener('click', () => {
+    const l = { woda: 'zimna', miejsce: 'mieszkanie', numer: '', odczyt: '', zdjecia: [] };
+    ustawLicznikWody(l);
+    // gdy nie ma żadnego licznika wody, nowy trafia przed węzeł cieplny
+    const wezel = state.liczniki.findIndex(x => /węzeł|wezel/i.test(x.nazwa));
+    if (!state.liczniki.some(x => x.woda) && wezel >= 0) state.liczniki.splice(wezel, 0, l);
+    else state.liczniki.push(l);
+    odswiez(l);
+    toast('Dodano licznik wody, wybierz rodzaj i miejsce');
   });
   bindPhotoInputs(wrap, (key, photos) => {
     const idx = +key.split('-')[1];
@@ -1402,7 +1505,6 @@ function openOCRModal(idx) {
   $('#ocr-preview').src = '';
   $('#ocr-results').style.display = 'none';
   $('#ocr-imie').value = '';
-  $('#ocr-pesel').value = '';
   $('#ocr-adres').value = '';
   $('#ocr-status').textContent = 'Wybierz zdjęcie albo zrób nowe aparatem.';
   $('#btn-apply-ocr').disabled = true;
@@ -1444,14 +1546,12 @@ async function processOcrImage(file) {
     const parsed = parseDokumentText(text);
 
     $('#ocr-imie').value = parsed.imie || '';
-    $('#ocr-pesel').value = parsed.pesel || '';
     $('#ocr-adres').value = parsed.adres || '';
     $('#ocr-results').style.display = 'block';
     $('#btn-apply-ocr').disabled = false;
 
     const found = [];
     if (parsed.imie) found.push('imię');
-    if (parsed.pesel) found.push('PESEL');
     if (parsed.adres) found.push('adres');
     $('#ocr-status').textContent = found.length
       ? `Znaleziono: ${found.join(', ')}. Sprawdź i popraw przed zatwierdzeniem.`
@@ -1463,16 +1563,9 @@ async function processOcrImage(file) {
 }
 
 function parseDokumentText(text) {
-  const out = { imie: '', pesel: '', adres: '' };
+  // PESEL celowo nie jest odczytywany ani zapisywany (RODO, protokół go nie potrzebuje)
+  const out = { imie: '', adres: '' };
   if (!text) return out;
-
-  // PESEL: 11 cyfr (preferuj po słowie PESEL)
-  let peselMatch = text.match(/PESEL[\s\n:]*([0-9OIo]{11})/i);
-  if (!peselMatch) peselMatch = text.match(/\b(\d{11})\b/);
-  if (peselMatch) {
-    // OCR czasem czyta 0 jako O lub I jako 1 — normalizuję
-    out.pesel = peselMatch[1].replace(/[Oo]/g, '0').replace(/[I]/g, '1');
-  }
 
   // Imię i Nazwisko z dowodu osobistego
   const nazwiskoMatch = text.match(/Nazwisko[\s\n:\/]*([A-ZŁŚĆŻŹŃĄĘÓ][A-ZŁŚĆŻŹŃĄĘÓa-złśćżźńąęó'\-]{1,})/);
@@ -1827,7 +1920,7 @@ async function generatePDF(signatures = {}) {
     ensureSpace(30);
     y = pdfSection(pdf, roles.najemcaLabel, y, M, W);
     pdf.setFontSize(10).setFont('Roboto', 'normal');
-    const najemcyAktywni = state.najemcy.filter(n => n.imie || n.pesel || n.adres || n.telefon || n.email || n.firma || n.nip);
+    const najemcyAktywni = state.najemcy.filter(n => n.imie || n.adres || n.telefon || n.email || n.firma || n.nip);
     if (najemcyAktywni.length === 0) {
       pdf.setTextColor(150).setFont('Roboto', 'italic');
       pdf.text('(brak danych najemcy)', M, y);
@@ -1850,7 +1943,6 @@ async function generatePDF(signatures = {}) {
         lines.push(`Reprezentowana przez: ${n.imie || '(brak)'}${n.funkcja ? ', ' + n.funkcja : ''}`);
       } else {
         lines.push(`Imię i nazwisko: ${n.imie || '(brak)'}`);
-        lines.push(`PESEL: ${n.pesel || '(brak)'}`);
         if (n.adres) lines.push(`Adres zamieszkania: ${n.adres}`);
       }
       if (n.telefon) lines.push(`Telefon: ${n.telefon}`);
@@ -2257,11 +2349,9 @@ function initApp() {
   });
   $('#btn-apply-ocr').addEventListener('click', () => {
     const imie = $('#ocr-imie').value.trim();
-    const pesel = $('#ocr-pesel').value.trim();
     const adres = $('#ocr-adres').value.trim();
     if (_ocrTargetIdx !== null && state.najemcy[_ocrTargetIdx]) {
       if (imie) state.najemcy[_ocrTargetIdx].imie = imie;
-      if (pesel) state.najemcy[_ocrTargetIdx].pesel = pesel;
       if (adres) state.najemcy[_ocrTargetIdx].adres = adres;
       renderNajemcy();
       bindMicButtons();
@@ -2295,6 +2385,7 @@ function initApp() {
 
 (async function init() {
   await openDb();
+  await wyczyscPeseleZArchiwum();
   initApp();
   renderPrzekazujacyOnHome();
   bindPrzekazujacyInputs();

@@ -574,6 +574,9 @@ textarea {
   margin-bottom: 8px;
   color: var(--brand);
 }
+.licznik-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.woda-toggle { margin: 0 0 8px; }
+.woda-toggle button { padding: 7px 6px; font-size: 13px; }
 .licznik-card.in-group {
   margin-left: 14px;
   border-left: 3px solid var(--brand);
