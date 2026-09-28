@@ -2,7 +2,7 @@
 // (c) Rafał Lenart, biuro@rmnieruchomosci.pl
 
 // numer wersji widoczny w zielonym pasku; podbijać razem z ?v= w index.html i CACHE w sw.js
-const WERSJA = 35;
+const WERSJA = 36;
 document.querySelectorAll('[data-wersja]').forEach(el => { el.textContent = 'v' + WERSJA; });
 
 // ============ STATE ============
@@ -981,34 +981,45 @@ function sortujLicznikiWody() {
   state.liczniki = [...reszta.slice(0, pierwszy), ...wody, ...reszta.slice(pierwszy)];
 }
 
+// Woda: najpierw wybierasz SKĄD (kuchnia, łazienka, całe mieszkanie), potem w tej grupie dodajesz zimną i ciepłą.
+// Grupa bez liczników (świeżo wybrana albo po usunięciu obu) trzymana jest tylko na ekranie, nie w protokole.
+let _pustaGrupaWody = null; // { id: protokół, miejsce }
+
 function renderLiczniki() {
   const wrap = $('#liczniki-list');
-  let html = '';
-  let lastGrupa = null;
-  state.liczniki.forEach((l, i) => {
-    const grupa = l.grupa || null;
-    if (grupa && grupa !== lastGrupa) {
-      html += `<div class="licznik-group-header">📍 ${grupa}</div>`;
-    }
-    lastGrupa = grupa;
-    const displayName = grupa ? (l.krotkaNazwa || l.nazwa) : l.nazwa;
+  sortujLicznikiWody();
+  const L = state.liczniki;
+  const pusta = _pustaGrupaWody && _pustaGrupaWody.id === state.id
+    && !L.some(l => l.woda && l.miejsce === _pustaGrupaWody.miejsce) ? _pustaGrupaWody.miejsce : null;
+
+  const naglowekWody = (miejsce) => {
+    const m = WODA_MIEJSCA.find(x => x.id === miejsce);
+    return `
+      <div class="woda-grupa" data-woda-grupa="${miejsce}">
+        <div class="licznik-group-header">💧 Woda: ${m.label}</div>
+        <div class="woda-skad">
+          <span>Skąd:</span>
+          <div class="rodzaj-toggle woda-toggle">
+            ${WODA_MIEJSCA.map(x => `<button type="button" class="${x.id === miejsce ? 'active' : ''}" data-grupa-miejsce="${x.id}" data-grupa-z="${miejsce}">${x.label}</button>`).join('')}
+          </div>
+        </div>`;
+  };
+  const dodajWode = (miejsce) => `
+        <div class="woda-dodaj">
+          <button type="button" class="btn btn-secondary" data-dodaj-wode="zimna" data-miejsce="${miejsce}">+ ❄️ Zimna woda</button>
+          <button type="button" class="btn btn-secondary" data-dodaj-wode="ciepla" data-miejsce="${miejsce}">+ 🔥 Ciepła woda</button>
+        </div>
+      </div>`;
+  const karta = (l, i) => {
     const numerId = `f-lic-numer-${i}`;
     const odczytId = `f-lic-odczyt-${i}`;
-    const wodaWybor = l.woda ? `
-        <div class="rodzaj-toggle woda-toggle">
-          <button type="button" class="${l.woda !== 'ciepla' ? 'active' : ''}" data-woda-rodzaj="zimna" data-licznik-idx="${i}">❄️ Zimna</button>
-          <button type="button" class="${l.woda === 'ciepla' ? 'active' : ''}" data-woda-rodzaj="ciepla" data-licznik-idx="${i}">🔥 Ciepła</button>
-        </div>
-        <div class="rodzaj-toggle woda-toggle">
-          ${WODA_MIEJSCA.map(m => `<button type="button" class="${l.miejsce === m.id ? 'active' : ''}" data-woda-miejsce="${m.id}" data-licznik-idx="${i}">${m.label}</button>`).join('')}
-        </div>` : '';
-    html += `
-      <div class="licznik-card ${grupa ? 'in-group' : ''}" data-licznik-card="${i}">
+    const nazwa = l.woda ? `${l.woda === 'ciepla' ? '🔥' : '❄️'} ${l.krotkaNazwa}` : (l.grupa ? (l.krotkaNazwa || l.nazwa) : l.nazwa);
+    return `
+      <div class="licznik-card ${l.woda || l.grupa ? 'in-group' : ''}" data-licznik-card="${i}">
         <div class="licznik-head">
-          <div class="name">${displayName}</div>
+          <div class="name">${nazwa}</div>
           ${l.woda ? `<button class="btn-mini-danger" type="button" data-del-licznik="${i}">✕ usuń</button>` : ''}
         </div>
-        ${wodaWybor}
         <div class="field">
           <label>Numer / "BRAK"</label>
           <div class="input-with-mic">
@@ -1024,19 +1035,51 @@ function renderLiczniki() {
           </div>
         </div>
         ${renderPhotos(l.zdjecia, 'licznik-' + i)}
-      </div>
-    `;
+      </div>`;
+  };
+
+  let html = '';
+  let lastGrupa = null;
+  L.forEach((l, i) => {
+    const prev = L[i - 1], next = L[i + 1];
+    if (l.woda) {
+      if (!prev || !prev.woda || prev.miejsce !== l.miejsce) html += naglowekWody(l.miejsce);
+      html += karta(l, i);
+      if (!next || !next.woda || next.miejsce !== l.miejsce) {
+        html += dodajWode(l.miejsce);
+        // wybrana, jeszcze pusta grupa pokazuje się zaraz za pozostałą wodą
+        if ((!next || !next.woda) && pusta) html += naglowekWody(pusta) + dodajWode(pusta);
+      }
+      lastGrupa = null;
+      return;
+    }
+    // bez żadnej wody pusta grupa staje przed węzłem cieplnym
+    if (pusta && !L.some(x => x.woda) && /węzeł|wezel/i.test(l.nazwa)) html += naglowekWody(pusta) + dodajWode(pusta);
+    if (l.grupa && l.grupa !== lastGrupa) html += `<div class="licznik-group-header">📍 ${l.grupa}</div>`;
+    lastGrupa = l.grupa || null;
+    html += karta(l, i);
   });
-  html += `<button class="btn btn-secondary btn-full" id="btn-add-woda" type="button" style="margin-top: 8px;">+ Dodaj licznik wody</button>`;
+  if (pusta && !L.some(x => x.woda) && !L.some(x => /węzeł|wezel/i.test(x.nazwa))) html += naglowekWody(pusta) + dodajWode(pusta);
+
+  const zajete = new Set(L.filter(l => l.woda).map(l => l.miejsce));
+  if (pusta) zajete.add(pusta);
+  const wolne = WODA_MIEJSCA.filter(m => !zajete.has(m.id));
+  if (wolne.length) {
+    html += `
+      <div class="woda-nowa">
+        <div class="woda-nowa-tytul">💧 Dodaj wodę, najpierw wybierz skąd:</div>
+        <div class="rodzaj-toggle woda-toggle">
+          ${wolne.map(m => `<button type="button" data-nowa-woda="${m.id}">+ ${m.label}</button>`).join('')}
+        </div>
+      </div>`;
+  }
   wrap.innerHTML = html;
 
-  // po zmianie licznik może przeskoczyć do innej grupy, więc przewijamy do niego
-  const odswiez = (licznik) => {
-    sortujLicznikiWody();
+  const pokazGrupe = (miejsce) => {
     renderLiczniki();
     autosave();
-    const card = wrap.querySelector(`[data-licznik-card="${state.liczniki.indexOf(licznik)}"]`);
-    if (card) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const el = wrap.querySelector(`[data-woda-grupa="${miejsce}"]`);
+    if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
   };
 
   wrap.querySelectorAll('input[data-licznik]').forEach(inp => {
@@ -1047,40 +1090,43 @@ function renderLiczniki() {
       autosave();
     });
   });
-  wrap.querySelectorAll('[data-woda-rodzaj]').forEach(btn => {
+  // zmiana "skąd" przestawia całą grupę (zimną i ciepłą razem)
+  wrap.querySelectorAll('[data-grupa-miejsce]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const l = state.liczniki[+btn.dataset.licznikIdx];
-      l.woda = btn.dataset.wodaRodzaj;
-      ustawLicznikWody(l);
-      odswiez(l);
+      const z = btn.dataset.grupaZ, na = btn.dataset.grupaMiejsce;
+      if (z === na) return;
+      state.liczniki.filter(l => l.woda && l.miejsce === z).forEach(l => { l.miejsce = na; ustawLicznikWody(l); });
+      if (pusta === z) _pustaGrupaWody = { id: state.id, miejsce: na };
+      pokazGrupe(na);
     });
   });
-  wrap.querySelectorAll('[data-woda-miejsce]').forEach(btn => {
+  wrap.querySelectorAll('[data-nowa-woda]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const l = state.liczniki[+btn.dataset.licznikIdx];
-      l.miejsce = btn.dataset.wodaMiejsce;
+      _pustaGrupaWody = { id: state.id, miejsce: btn.dataset.nowaWoda };
+      pokazGrupe(btn.dataset.nowaWoda);
+    });
+  });
+  wrap.querySelectorAll('[data-dodaj-wode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const l = { woda: btn.dataset.dodajWode, miejsce: btn.dataset.miejsce, numer: '', odczyt: '', zdjecia: [] };
       ustawLicznikWody(l);
-      odswiez(l);
+      const wezel = state.liczniki.findIndex(x => /węzeł|wezel/i.test(x.nazwa));
+      if (!state.liczniki.some(x => x.woda) && wezel >= 0) state.liczniki.splice(wezel, 0, l);
+      else state.liczniki.push(l);
+      pokazGrupe(l.miejsce);
     });
   });
   wrap.querySelectorAll('[data-del-licznik]').forEach(btn => {
     btn.addEventListener('click', () => {
       const i = +btn.dataset.delLicznik;
-      if (!confirm(`Usunąć licznik „${state.liczniki[i].nazwa}”?`)) return;
+      const l = state.liczniki[i];
+      if (!confirm(`Usunąć licznik „${l.nazwa}”?`)) return;
       state.liczniki.splice(i, 1);
+      // po usunięciu ostatniego licznika grupa zostaje na ekranie, żeby można było dodać inny
+      if (!state.liczniki.some(x => x.woda && x.miejsce === l.miejsce)) _pustaGrupaWody = { id: state.id, miejsce: l.miejsce };
       renderLiczniki();
       autosave();
     });
-  });
-  $('#btn-add-woda').addEventListener('click', () => {
-    const l = { woda: 'zimna', miejsce: 'mieszkanie', numer: '', odczyt: '', zdjecia: [] };
-    ustawLicznikWody(l);
-    // gdy nie ma żadnego licznika wody, nowy trafia przed węzeł cieplny
-    const wezel = state.liczniki.findIndex(x => /węzeł|wezel/i.test(x.nazwa));
-    if (!state.liczniki.some(x => x.woda) && wezel >= 0) state.liczniki.splice(wezel, 0, l);
-    else state.liczniki.push(l);
-    odswiez(l);
-    toast('Dodano licznik wody, wybierz rodzaj i miejsce');
   });
   bindPhotoInputs(wrap, (key, photos) => {
     const idx = +key.split('-')[1];

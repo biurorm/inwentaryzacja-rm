@@ -51,3 +51,4 @@ Funkcje zatwierdzone przez Rafała 2026-05-14:
 **Timing:** następna sesja po testach Rafała na realnym mieszkaniu.
 
 - v35 (28.09.2026): PESEL najemcy usuniety calkiem (formularz, skan dokumentu, PDF, czyszczenie starych protokolow w telefonie). Liczniki wody: wybor Zimna/Ciepla i Kuchnia/Lazienka/Mieszkanie na kazdym liczniku, "+ Dodaj licznik wody", usuwanie licznika wody, automatyczne grupowanie po miejscu.
+- v36 (28.09.2026): woda wg schematu Rafala: najpierw "Skad" (Kuchnia/Lazienka/Mieszkanie) dla calej grupy, potem w grupie przyciski "+ Zimna woda" i "+ Ciepla woda". Nowa grupa: "Dodaj wode, najpierw wybierz skad". Pusta grupa zostaje na ekranie po usunieciu licznikow.
